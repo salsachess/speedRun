@@ -15,7 +15,11 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "@mliebelt/pgn-parser": "^1.4.15",
+    "@vuepic/vue-datepicker": "^9.0.3",
+    "axios": "^1.7.7",
     "pinia": "^2.1.7",
+    "reseter.css": "^2.0.0",
     "vue": "^3.4.29",
     "vue-router": "^4.3.3"
   },

@@ -1,64 +1,51 @@
-# speedRun2
+# Speed Run
 
-This template should help get you started developing with Vue 3 in Vite.
+This codebase represents a Vue.js application called "Speed Run" that is designed for tracking and visualizing chess game statistics. Here's a high-level overview of what the application does:
 
-## Recommended IDE Setup
+1. Project Setup:
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+   - The project is set up using Vue 3 with TypeScript, Vite as the build tool, and Pinia for state management.
+   - It includes various development tools like ESLint, Prettier, and Playwright for testing.
 
-## Type Support for `.vue` Imports in TS
+2. Main Application Structure:
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
+   - The main entry point is `src/main.ts`, which initializes the Vue app, sets up Pinia, and mounts the app to the DOM.
+   - `src/App.vue` serves as the root component, using Vue Router to render different pages.
 
-## Customize configuration
+3. Routing:
 
-See [Vite Configuration Reference](https://vitejs.dev/config/).
+   - The router (`src/router/index.ts`) defines two main routes:
+     - A configuration page (`/`)
+     - A games page (`/games/nick/:nick?/startTS/:startTs?/timeClass/:timeClass?`)
 
-## Project Setup
+4. Pages:
 
-```sh
-npm install
-```
+   - Configuration Page (`src/pages/PConfig.vue`):
 
-### Compile and Hot-Reload for Development
+     - Allows users to input their chess.com nickname, select a time class, and choose a start date.
+     - Generates a URL for the games page based on the input.
 
-```sh
-npm run dev
-```
+   - Games Page (`src/pages/PGames.vue`):
+     - Fetches and displays chess game data for the specified user.
+     - Shows statistics like win/loss/draw counts and total game time.
+     - Renders a graph of the player's rating over time using the nvd3 library.
 
-### Type-Check, Compile and Minify for Production
+5. Data Management:
 
-```sh
-npm run build
-```
+   - The `gamesStore` (`src/stores/gamesStore.ts`) handles fetching and processing chess game data from the chess.com API.
+   - It includes functions to fetch games, analyze them, and prepare data for visualization.
 
-### Run Unit Tests with [Vitest](https://vitest.dev/)
+6. Visualization:
 
-```sh
-npm run test:unit
-```
+   - The application uses the nvd3 library (based on d3.js) to create a line chart of the player's rating over time.
+   - Custom CSS (`public/libs/nv.d3.css`) is included for styling the chart.
 
-### Run End-to-End Tests with [Playwright](https://playwright.dev)
+7. Styling:
 
-```sh
-# Install browsers for the first run
-npx playwright install
+   - The app uses a combination of scoped component styles and global CSS (`src/assets/main.css` and `src/assets/normalize.css`) for layout and design.
 
-# When testing on CI, must build the project first
-npm run build
+8. Testing and Development:
+   - The project includes configuration for Vitest (unit testing) and Playwright (end-to-end testing).
+   - Various configuration files are present for TypeScript, ESLint, and Prettier to ensure code quality and consistency.
 
-# Runs the end-to-end tests
-npm run test:e2e
-# Runs the tests only on Chromium
-npm run test:e2e -- --project=chromium
-# Runs the tests of a specific file
-npm run test:e2e -- tests/example.spec.ts
-# Runs the tests in debug mode
-npm run test:e2e -- --debug
-```
-
-### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
-```
+In summary, this application allows users to input their chess.com username and view statistics and a rating graph for their recent games, with the ability to filter by time class and start date. The app fetches data from the chess.com API, processes it, and presents it in a visually appealing way using Vue.js and d3.js-based charting.
