@@ -135,17 +135,17 @@ const graphDataLengthOld = ref(0)
 const getFontSize = (text: string) => {
   const length = text.length
 
-  if (length >= 11) {
-    return 8
-  }
-  if (length >= 13) {
-    return 7
+  if (length >= 16) {
+    return 5
   }
   if (length >= 14) {
     return 6
   }
-  if (length >= 16) {
-    return 5
+  if (length >= 13) {
+    return 7
+  }
+  if (length >= 11) {
+    return 8
   }
 
   return 9

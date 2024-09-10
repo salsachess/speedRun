@@ -213,7 +213,7 @@ export const useGamesStore = defineStore('games', () => {
         }
 
         if (g.white.result === g.black.result) {
-          gameData.draw + 1
+          gameData.draw += 1
         }
 
         gameData.duration = getDurationFromPgn(g.pgn)
