@@ -156,24 +156,26 @@ const getFontSize = (text: string) => {
   <div class="result">
     <div v-if="loading">loading...</div>
     <table v-else class="full-page-table">
-      <tr>
-        <td class="half-width">
-          <div class="text center-screen">
-            <span :style="{ fontSize: getFontSize(resultText) + 'vw' }">{{ resultText }}</span>
-            <span :style="{ fontSize: getFontSize(gamesTimeString) + 'vw' }">{{
-              gamesTimeString
-            }}</span>
-            <span :style="{ fontSize: getFontSize(effectiveTimeClass) + 'vw' }">{{
-              effectiveTimeClass
-            }}</span>
-          </div>
-        </td>
-        <td class="half-width">
-          <div id="chart">
-            <svg></svg>
-          </div>
-        </td>
-      </tr>
+      <tbody>
+        <tr>
+          <td class="half-width">
+            <div class="text center-screen">
+              <span :style="{ fontSize: getFontSize(resultText) + 'vw' }">{{ resultText }}</span>
+              <span :style="{ fontSize: getFontSize(gamesTimeString) + 'vw' }">{{
+                gamesTimeString
+              }}</span>
+            </div>
+          </td>
+          <td class="half-width">
+            <div id="chart" class="chart-container">
+              <div class="time-class-overlay" :style="{ fontSize: '15vw' }">
+                {{ effectiveTimeClass }}
+              </div>
+              <svg></svg>
+            </div>
+          </td>
+        </tr>
+      </tbody>
     </table>
   </div>
 </template>
@@ -181,8 +183,8 @@ const getFontSize = (text: string) => {
 <style scoped>
 .result {
   font-family: 'Pacifico', serif;
-  height: 100vh;
-  width: 100vw;
+  height: 98vh;
+  width: 98vw;
 }
 
 .full-page-table {
@@ -212,6 +214,30 @@ const getFontSize = (text: string) => {
 #chart {
   height: 100%;
   width: 100%;
+  position: relative;
+}
+
+.chart-container {
+  position: relative;
+}
+
+.time-class-overlay {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+  color: lightgray;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-family: 'Pacifico', serif;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#chart svg {
+  position: relative;
+  z-index: 2;
 }
 
 .nvd3 g.nv-groups path.nv-line {
