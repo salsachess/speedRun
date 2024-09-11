@@ -32,3 +32,7 @@ git add dist/ -f
 git commit -m "deploy on github pages"
 git push origin --delete gh-pages
 git subtree push --prefix dist origin gh-pages
+
+git checkout -- .
+git rebase -i HEAD~2
+drop the last commit
