@@ -7,7 +7,7 @@ import '@vuepic/vue-datepicker/dist/main.css'
 const router = useRouter()
 
 const date = ref(new Date().toISOString())
-const nick = ref('')
+const nick = ref(localStorage.getItem('lastNick') || '')
 const timeClass = ref('auto')
 
 const computedUrl = computed(() => {

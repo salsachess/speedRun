@@ -6,18 +6,18 @@ import { parse as pgnParse, type ParseTree } from '@mliebelt/pgn-parser'
 const CORRECT_GAME_RULES = 'chess'
 const GAME_RESULT_WIN = 'win'
 
+interface PgnTagsType {
+  UTCDate: { value: string }
+  StartTime: string
+  EndDate: string
+  EndTime: string
+}
+
 const getDurationFromPgn = (pgnString: string) => {
   try {
     const pgn = pgnParse(pgnString, { startRule: 'game' }) as ParseTree
 
-    const tags = pgn.tags as unknown as {
-      UTCDate: {
-        value: string
-      }
-      StartTime: string
-      EndDate: string
-      EndTime: string
-    }
+    const tags = pgn.tags as unknown as PgnTagsType
 
     const tUTCDate = tags.UTCDate.value
     const tUTCTime = tags.StartTime
@@ -82,6 +82,7 @@ export interface GamesDataType {
 export const useGamesStore = defineStore('games', () => {
   const games = ref<GameType[]>([])
   const analysisCache = ref<Record<string, GamesDataType>>({})
+  const updateCache = ref<Record<string, boolean>>({})
 
   async function fetchGames(nick: string, year: number, month: number) {
     try {
@@ -90,13 +91,9 @@ export const useGamesStore = defineStore('games', () => {
       )
 
       return response?.data?.games ?? []
-    } catch (error: unknown) {
-      let message = 'Unknown error'
-      if (error instanceof Error) {
-        message = error.message
-      }
-
-      throw new Error(`Can not fetch games data: ${year}.${month}; ${message}`)
+    } catch (error) {
+      console.error(`Failed to fetch games for ${nick} (${year}-${month}):`, error)
+      return [] // Return an empty array instead of throwing
     }
   }
 
@@ -123,25 +120,37 @@ export const useGamesStore = defineStore('games', () => {
       }
     }
 
+    allGames.forEach((game) => {
+      updateCache.value[game.url] = true
+    })
+
     games.value = allGames.filter((game) => game.end_time >= startDate.getTime() / 1000)
   }
 
   async function updateGames(nick: string, startDate: Date) {
-    const gamesCountBeforeUpdate = games.value.length
-
     const now = new Date()
     const currentYear = now.getUTCFullYear()
     const currentMonth = now.getUTCMonth() + 1
 
     let newGames = await fetchGames(nick, currentYear, currentMonth)
-    newGames = newGames.filter((game: GameType) => game.end_time >= startDate.getTime() / 1000)
-    const mergedGames = [...games.value, ...newGames]
-    const uniqueGames = mergedGames.filter(
-      (game, index, self) => index === self.findIndex((t) => t.url === game.url)
-    )
-    games.value = uniqueGames
 
-    return gamesCountBeforeUpdate !== games.value.length
+    newGames = newGames.filter((game: GameType) => game.end_time >= startDate.getTime() / 1000)
+    let areThereNewGames = false
+    newGames.forEach((game: GameType) => {
+      if (updateCache.value[game.url]) {
+        return
+      }
+
+      games.value.push(game)
+      updateCache.value[game.url] = true
+      console.log(game)
+
+      areThereNewGames = true
+    })
+
+    console.log(games.value.length)
+
+    return areThereNewGames
   }
 
   function analyzeGames(timeClass: string, nick: string) {
@@ -179,13 +188,12 @@ export const useGamesStore = defineStore('games', () => {
     }
 
     const gamesData = filteredGames.reduce(
-      (acc, g) => {
-        if (g.rules !== CORRECT_GAME_RULES) {
+      (acc, game) => {
+        if (game.rules !== CORRECT_GAME_RULES) {
           return acc
         }
 
-        const cacheKey = g.url
-        const cachedResult = analysisCache.value[cacheKey]
+        const cachedResult = analysisCache.value[game.url]
         if (cachedResult) {
           return addResultAndReturnAcc(acc, cachedResult)
         }
@@ -202,25 +210,27 @@ export const useGamesStore = defineStore('games', () => {
         let rating
 
         const nickLowerCased = nick.toLowerCase()
-        if (g.white.username.toLowerCase() === nickLowerCased) {
-          rating = g.white.rating
-          gameData.win += g.white.result === GAME_RESULT_WIN ? 1 : 0
-        } else if (g.black.username.toLowerCase() === nickLowerCased) {
-          rating = g.black.rating
-          gameData.win += g.black.result === GAME_RESULT_WIN ? 1 : 0
+        if (game.white.username.toLowerCase() === nickLowerCased) {
+          rating = game.white.rating
+          gameData.win += game.white.result === GAME_RESULT_WIN ? 1 : 0
+        } else if (game.black.username.toLowerCase() === nickLowerCased) {
+          rating = game.black.rating
+          gameData.win += game.black.result === GAME_RESULT_WIN ? 1 : 0
         } else {
           return acc
         }
 
-        if (g.white.result === g.black.result) {
+        if (game.white.result === game.black.result) {
           gameData.draw += 1
         }
 
-        gameData.duration = getDurationFromPgn(g.pgn)
+        gameData.duration = getDurationFromPgn(game.pgn)
 
         gameData.graphData = [{ x: acc.duration, y: rating }]
 
-        analysisCache.value[cacheKey] = gameData
+        if (analysisCache.value) {
+          analysisCache.value[game.url] = gameData
+        }
 
         return addResultAndReturnAcc(acc, gameData)
       },

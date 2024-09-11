@@ -27,6 +27,7 @@ onMounted(() => {
   }
 
   initPage()
+  localStorage.setItem('lastNick', currentNick.value)
 })
 
 const loading = ref(true)
@@ -57,35 +58,25 @@ const updateGames = async () => {
   updateAndScheduleNext()
 }
 
+const getTimeString = (secondsTotal: number) => {
+  const hours = Math.floor(secondsTotal / 3600)
+  const minutes = Math.floor((secondsTotal - hours * 3600) / 60)
+  const seconds = Math.floor(secondsTotal - hours * 3600 - minutes * 60)
+
+  return [hours, minutes, seconds].map((val) => val.toString().padStart(2, '0')).join(':')
+}
+
 const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
   effectiveTimeClass.value = allGamesData.effectiveTimeClass
 
   const loss = allGamesData.count - allGamesData.win - allGamesData.draw
   resultText.value = '+' + allGamesData.win + ' -' + loss + ' =' + allGamesData.draw
 
-  function getTimeString(secondsTotal: number) {
-    let hours = Math.floor(secondsTotal / 3600)
-    let minutes = Math.floor((secondsTotal - hours * 3600) / 60)
-    let seconds = Math.floor(secondsTotal - hours * 3600 - minutes * 60)
-
-    let hoursString = hours.toString()
-    if (hours < 10) {
-      hoursString = '0' + hoursString
-    }
-
-    let minutesString = minutes.toString()
-    if (minutes < 10) {
-      minutesString = '0' + minutesString
-    }
-    let secondsString = seconds.toString()
-    if (seconds < 10) {
-      secondsString = '0' + secondsString
-    }
-
-    return hoursString + ':' + minutesString + ':' + secondsString
-  }
-
   gamesTimeString.value = getTimeString(allGamesData.duration)
+
+  if (allGamesData.graphData.length === 0) {
+    return
+  }
 
   const data = () => {
     return [
@@ -97,31 +88,25 @@ const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
     ]
   }
 
-  if (allGamesData.graphData.length > 0) {
-    if (!chartData.value) {
-      nv.addGraph(function () {
-        chart.value = nv.models.lineChart().showLegend(false)
+  if (!chartData.value) {
+    nv.addGraph(() => {
+      chart.value = nv.models.lineChart().showLegend(false)
 
-        chart.value.xAxis.axisLabel('Time').tickFormat((d: number) => getTimeString(d))
+      chart.value.xAxis.axisLabel('Time').tickFormat((d: number) => getTimeString(d))
 
-        chart.value.yAxis.axisLabel('rating')
+      chart.value.yAxis.axisLabel('rating')
 
-        chartData.value = d3.select('#chart svg').datum(data())
-        chartData.value.transition().duration(500).call(chart.value)
+      chartData.value = d3.select('#chart svg').datum(data())
+      chartData.value.transition().duration(500).call(chart.value)
 
-        nv.utils.windowResize(chart.value.update)
-
-        return chart.value
-      })
-    } else {
-      if (graphDataLengthOld.value === allGamesData.graphData.length) {
-        return
-      }
-
-      chartData.value.datum(data()).transition().duration(500).call(chart.value)
       nv.utils.windowResize(chart.value.update)
-      graphDataLengthOld.value = allGamesData.graphData.length
-    }
+
+      return chart.value
+    })
+  } else if (graphDataLengthOld.value !== allGamesData.graphData.length) {
+    chartData.value.datum(data()).transition().duration(500).call(chart.value)
+    nv.utils.windowResize(chart.value.update)
+    graphDataLengthOld.value = allGamesData.graphData.length
   }
 }
 
