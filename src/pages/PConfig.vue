@@ -3,12 +3,14 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import VueDatePicker from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
+import { DEFAULT_RULES, DEFAULT_TIME_CLASS } from '@/stores/gamesStore'
 
 const router = useRouter()
 
 const date = ref(new Date().toISOString())
 const nick = ref(localStorage.getItem('lastNick') || '')
-const timeClass = ref('auto')
+const timeClass = ref(localStorage.getItem('lastTimeClass') || DEFAULT_TIME_CLASS)
+const rules = ref(localStorage.getItem('lastRules') || DEFAULT_RULES)
 
 const computedUrl = computed(() => {
   if (!nick.value) {
@@ -22,7 +24,8 @@ const computedUrl = computed(() => {
     params: {
       nick: nick.value,
       startTs: startTS.toString(),
-      timeClass: timeClass.value
+      timeClass: timeClass.value,
+      rules: rules.value
     }
   }).href
 })
@@ -40,13 +43,20 @@ const goToComputedUrl = () => {
   <div class="config">
     <br />
     <span :class="!nick ? 'red' : ''">nick</span>:
-    <input type="text" v-model="nick" @keyup.enter="goToComputedUrl" /> <br /><br />
+    <input type="text" v-model="nick" @keyup.enter="goToComputedUrl" />
+    <hr />
     <input type="radio" v-model="timeClass" value="auto" /> auto <br />
     <input type="radio" v-model="timeClass" value="rapid" /> rapid <br />
     <input type="radio" v-model="timeClass" value="blitz" /> blitz <br />
-    <input type="radio" v-model="timeClass" value="bullet" /> bullet <br /><br />
+    <input type="radio" v-model="timeClass" value="bullet" /> bullet
+    <hr />
+    <input type="radio" v-model="rules" value="auto" /> auto <br />
+    <input type="radio" v-model="rules" value="chess" /> chess <br />
+    <input type="radio" v-model="rules" value="chess960" /> chess960 <br />
+    <input type="radio" v-model="rules" value="crazyhouse" /> crazyhouse <br />
+    <hr />
     <VueDatePicker v-model="date" time-picker-inline inline auto-apply utc />
-    <br /><br />
+    <hr />
 
     url: <a v-if="nick" :href="computedUrl">{{ computedUrl }}</a>
     <span class="red" v-else>nick is required</span>

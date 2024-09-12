@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useGamesStore, type GamesDataType } from '@/stores/gamesStore'
+import {
+  DEFAULT_RULES,
+  DEFAULT_TIME_CLASS,
+  useGamesStore,
+  type GamesDataType
+} from '@/stores/gamesStore'
 
-const DEFAULT_TIME_CLASS = 'auto'
 const UPDATE_GAMES_INTERVAL = 1000
+const RULES_WHICH_ARE_NOT_DISPLAYED = ['chess', 'auto']
 
 const props = defineProps<{
   startTs: number | null
   nick: string | null
   timeClass: string | null
+  rules: string | null
 }>()
 
 const router = useRouter()
 const gamesStore = useGamesStore()
 
 const currentTimeClass = ref(props.timeClass ?? DEFAULT_TIME_CLASS)
+const currentRules = ref(props.rules ?? DEFAULT_RULES)
 const currentNick = ref(props.nick ?? '')
 const currentStartTs = ref(props.startTs ? new Date(props.startTs) : new Date())
 
@@ -28,6 +35,8 @@ onMounted(() => {
 
   initPage()
   localStorage.setItem('lastNick', currentNick.value)
+  localStorage.setItem('lastTimeClass', currentTimeClass.value)
+  localStorage.setItem('lastRules', currentRules.value)
 })
 
 const loading = ref(true)
@@ -40,16 +49,28 @@ const initPage = async () => {
   updateGames()
 }
 
+let updateInProgress = false
 let firstUpdate = true
 const updateGames = async () => {
   const updateAndScheduleNext = async () => {
-    const areThereNewGames = await gamesStore.updateGames(currentNick.value, currentStartTs.value)
-    if (areThereNewGames || firstUpdate) {
-      const allGamesData = gamesStore.analyzeGames(currentTimeClass.value, currentNick.value)
+    if (updateInProgress) return
+    updateInProgress = true
 
-      prepareGamesDataForVisualization(allGamesData)
+    try {
+      const areThereNewGames = await gamesStore.updateGames(currentNick.value, currentStartTs.value)
+      if (areThereNewGames || firstUpdate) {
+        const allGamesData = gamesStore.analyzeGames(
+          currentNick.value,
+          currentTimeClass.value,
+          currentRules.value
+        )
 
-      firstUpdate = false
+        prepareGamesDataForVisualization(allGamesData)
+
+        firstUpdate = false
+      }
+    } finally {
+      updateInProgress = false
     }
 
     setTimeout(updateAndScheduleNext, UPDATE_GAMES_INTERVAL)
@@ -68,6 +89,7 @@ const getTimeString = (secondsTotal: number) => {
 
 const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
   effectiveTimeClass.value = allGamesData.effectiveTimeClass
+  effectiveRules.value = allGamesData.effectiveRules
 
   const loss = allGamesData.count - allGamesData.win - allGamesData.draw
   resultText.value = '+' + allGamesData.win + ' -' + loss + ' =' + allGamesData.draw
@@ -110,9 +132,10 @@ const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
   }
 }
 
-const resultText = ref('-')
-const gamesTimeString = ref('-')
-const effectiveTimeClass = ref('-')
+const resultText = ref('')
+const gamesTimeString = ref('')
+const effectiveTimeClass = ref('')
+const effectiveRules = ref('')
 const chart = ref<any>(null)
 const chartData = ref<any>(null)
 const graphDataLengthOld = ref(0)
@@ -139,7 +162,7 @@ const getFontSize = (text: string) => {
 
 <template>
   <div class="result">
-    <div v-if="loading">loading...</div>
+    <div v-if="loading || !effectiveTimeClass">loading...</div>
     <table v-else class="full-page-table">
       <tbody>
         <tr>
@@ -153,7 +176,10 @@ const getFontSize = (text: string) => {
           </td>
           <td class="half-width">
             <div id="chart" class="chart-container">
-              <div class="time-class-overlay" :style="{ fontSize: '15vw' }">
+              <div class="time-class-overlay" :style="{ fontSize: '8vw' }">
+                <template v-if="!RULES_WHICH_ARE_NOT_DISPLAYED.includes(effectiveRules)"
+                  >{{ effectiveRules }} <br
+                /></template>
                 {{ effectiveTimeClass }}
               </div>
               <svg></svg>
@@ -218,6 +244,7 @@ const getFontSize = (text: string) => {
   font-family: 'Pacifico', serif;
   pointer-events: none;
   z-index: 1;
+  text-align: center;
 }
 
 #chart svg {

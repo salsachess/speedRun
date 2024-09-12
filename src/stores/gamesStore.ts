@@ -3,7 +3,9 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { parse as pgnParse, type ParseTree } from '@mliebelt/pgn-parser'
 
-const CORRECT_GAME_RULES = 'chess'
+export const DEFAULT_TIME_CLASS = 'auto'
+export const DEFAULT_RULES = 'auto'
+
 const GAME_RESULT_WIN = 'win'
 
 interface PgnTagsType {
@@ -77,6 +79,7 @@ export interface GamesDataType {
   duration: number
   graphData: { x: number; y: number }[]
   effectiveTimeClass: string
+  effectiveRules: string
 }
 
 export const useGamesStore = defineStore('games', () => {
@@ -93,8 +96,15 @@ export const useGamesStore = defineStore('games', () => {
       return response?.data?.games ?? []
     } catch (error) {
       console.error(`Failed to fetch games for ${nick} (${year}-${month}):`, error)
-      return [] // Return an empty array instead of throwing
+
+      return []
     }
+  }
+
+  function filterRatedGamesAndByStartDate(games: GameType[], startDate: Date) {
+    return games
+      .filter((game) => game.rated)
+      .filter((game) => game.end_time >= startDate.getTime() / 1000)
   }
 
   async function getAllGames(nick: string, startDate: Date) {
@@ -124,7 +134,7 @@ export const useGamesStore = defineStore('games', () => {
       updateCache.value[game.url] = true
     })
 
-    games.value = allGames.filter((game) => game.end_time >= startDate.getTime() / 1000)
+    games.value = filterRatedGamesAndByStartDate(allGames, startDate)
   }
 
   async function updateGames(nick: string, startDate: Date) {
@@ -134,7 +144,11 @@ export const useGamesStore = defineStore('games', () => {
 
     let newGames = await fetchGames(nick, currentYear, currentMonth)
 
-    newGames = newGames.filter((game: GameType) => game.end_time >= startDate.getTime() / 1000)
+    if (!newGames.length) {
+      return false
+    }
+
+    newGames = filterRatedGamesAndByStartDate(newGames, startDate)
     let areThereNewGames = false
     newGames.forEach((game: GameType) => {
       if (updateCache.value[game.url]) {
@@ -143,17 +157,14 @@ export const useGamesStore = defineStore('games', () => {
 
       games.value.push(game)
       updateCache.value[game.url] = true
-      console.log(game)
 
       areThereNewGames = true
     })
 
-    console.log(games.value.length)
-
     return areThereNewGames
   }
 
-  function analyzeGames(timeClass: string, nick: string) {
+  function analyzeGames(nick: string, timeClass: string, rules: string) {
     const allGames = games.value
     if (allGames.length === 0) {
       return {
@@ -162,20 +173,28 @@ export const useGamesStore = defineStore('games', () => {
         draw: 0,
         duration: 0,
         graphData: [],
-        effectiveTimeClass: timeClass
+        effectiveTimeClass: timeClass,
+        effectiveRules: rules
       }
     }
 
     let effectiveTimeClass = timeClass
-    if (effectiveTimeClass === 'auto') {
+    if (effectiveTimeClass === DEFAULT_TIME_CLASS) {
       const lastGame = allGames[allGames.length - 1]
 
       effectiveTimeClass = lastGame.time_class
     }
 
-    const filteredGames: GameType[] = allGames.filter(
-      (game: GameType) => game.time_class === effectiveTimeClass
-    )
+    let effectiveRules = rules
+    if (effectiveRules === DEFAULT_RULES) {
+      const lastGame = allGames[allGames.length - 1]
+
+      effectiveRules = lastGame.rules
+    }
+
+    const filteredGames: GameType[] = allGames
+      .filter((game: GameType) => game.time_class === effectiveTimeClass)
+      .filter((game: GameType) => game.rules === effectiveRules)
 
     const addResultAndReturnAcc = (acc: GamesDataType, gameData: GamesDataType) => {
       acc.win += gameData.win
@@ -189,10 +208,6 @@ export const useGamesStore = defineStore('games', () => {
 
     const gamesData = filteredGames.reduce(
       (acc, game) => {
-        if (game.rules !== CORRECT_GAME_RULES) {
-          return acc
-        }
-
         const cachedResult = analysisCache.value[game.url]
         if (cachedResult) {
           return addResultAndReturnAcc(acc, cachedResult)
@@ -204,7 +219,8 @@ export const useGamesStore = defineStore('games', () => {
           draw: 0,
           duration: 0,
           graphData: [],
-          effectiveTimeClass
+          effectiveTimeClass,
+          effectiveRules
         }
 
         let rating
@@ -240,7 +256,8 @@ export const useGamesStore = defineStore('games', () => {
         draw: 0,
         duration: 0,
         graphData: [],
-        effectiveTimeClass
+        effectiveTimeClass,
+        effectiveRules
       } as GamesDataType
     )
 
