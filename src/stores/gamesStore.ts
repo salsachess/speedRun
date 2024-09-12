@@ -17,7 +17,12 @@ interface PgnTagsType {
 
 const getDurationFromPgn = (pgnString: string) => {
   try {
-    const pgn = pgnParse(pgnString, { startRule: 'game' }) as ParseTree
+    const pgnStringOnlyTags = pgnString
+      .split('\n')
+      .filter((line) => line.startsWith('['))
+      .join('\n')
+
+    const pgn = pgnParse(pgnStringOnlyTags, { startRule: 'tags' }) as ParseTree
 
     const tags = pgn.tags as unknown as PgnTagsType
 
@@ -35,14 +40,14 @@ const getDurationFromPgn = (pgnString: string) => {
     const duration = Math.round(tEnd.getTime() / 1000) - Math.round(tStart.getTime() / 1000)
 
     if (isNaN(duration)) {
-      console.log('Duration is NaN for pgn: ' + pgnString)
+      console.error('Duration is NaN for pgn: ' + pgnString)
 
       return 0
     }
 
     return duration
   } catch (e) {
-    console.log('Failed to parse pgn: ' + pgnString)
+    console.error('Failed to parse pgn: ' + pgnString)
 
     return 0
   }
