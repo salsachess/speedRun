@@ -54,6 +54,9 @@ const goToComputedUrl = () => {
     <input type="radio" v-model="rules" value="chess" /> chess <br />
     <input type="radio" v-model="rules" value="chess960" /> chess960 <br />
     <input type="radio" v-model="rules" value="crazyhouse" /> crazyhouse <br />
+    <input type="radio" v-model="rules" value="bughouse" /> bughouse <br />
+    <input type="radio" v-model="rules" value="kingofthehill" /> kingofthehill <br />
+    <input type="radio" v-model="rules" value="oddschess" /> oddschess <br />
     <hr />
     <VueDatePicker v-model="date" time-picker-inline inline auto-apply utc />
     <hr />

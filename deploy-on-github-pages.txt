@@ -34,5 +34,6 @@ git push origin --delete gh-pages
 git subtree push --prefix dist origin gh-pages
 
 git checkout -- .
+# drop the last commit
 git rebase -i HEAD~2
-drop the last commit
+
