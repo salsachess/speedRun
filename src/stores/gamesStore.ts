@@ -182,7 +182,7 @@ export const useGamesStore = defineStore('games', () => {
   }
 
   function analyzeGames(nick: string, timeClass: string, rules: string) {
-    const allGames = games.value
+    let allGames = games.value
     if (allGames.length === 0) {
       return {
         win: 0,
@@ -193,6 +193,14 @@ export const useGamesStore = defineStore('games', () => {
         effectiveTimeClass: timeClass,
         effectiveRules: rules
       }
+    }
+
+    if (rules !== DEFAULT_RULES) {
+      allGames = allGames.filter((game: GameType) => game.rules === rules)
+    }
+
+    if (timeClass !== DEFAULT_TIME_CLASS) {
+      allGames = allGames.filter((game: GameType) => game.time_class === timeClass)
     }
 
     let effectiveTimeClass = timeClass
