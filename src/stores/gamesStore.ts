@@ -5,6 +5,7 @@ import { parse as pgnParse, type ParseTree } from '@mliebelt/pgn-parser'
 
 export const DEFAULT_TIME_CLASS = 'auto'
 export const DEFAULT_RULES = 'auto'
+export const RULE_BUGHOUSE = 'bughouse'
 
 const GAME_RESULT_WIN = 'win'
 
@@ -245,7 +246,11 @@ export const useGamesStore = defineStore('games', () => {
           gameData.draw += 1
         }
 
-        gameData.duration = getDurationFromPgn(game.pgn)
+        if (game.rules === RULE_BUGHOUSE) {
+          gameData.duration = +game.time_control
+        } else {
+          gameData.duration = getDurationFromPgn(game.pgn)
+        }
 
         gameData.graphData = [{ x: acc.duration, y: rating }]
 
