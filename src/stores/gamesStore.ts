@@ -38,10 +38,21 @@ const getDurationFromPgn = (pgnString: string) => {
     const endDateString = tEndDate + ' ' + tEndTime
     const tEnd = new Date(endDateString.replace(/\./g, '-'))
 
+    if (
+      !(tStart instanceof Date) ||
+      !(tEnd instanceof Date) ||
+      isNaN(tStart.getTime()) ||
+      isNaN(tEnd.getTime())
+    ) {
+      console.error('Invalid date object for pgn: ' + pgnString)
+
+      return 0
+    }
+
     const duration = Math.round(tEnd.getTime() / 1000) - Math.round(tStart.getTime() / 1000)
 
-    if (isNaN(duration)) {
-      console.error('Duration is NaN for pgn: ' + pgnString)
+    if (isNaN(duration) || duration < 0) {
+      console.error('Invalid duration for pgn: ' + pgnString)
 
       return 0
     }
