@@ -102,7 +102,8 @@ export interface GamesDataType {
 export const useGamesStore = defineStore('games', () => {
   const games = ref<GameType[]>([])
   const analysisCache = ref<Record<string, GamesDataType>>({})
-  const updateCache = ref<Record<string, boolean>>({})
+  // const updateCache = ref<Record<string, boolean>>({})
+  const updateCache = ref<Record<string, string>>({})
 
   async function fetchGames(nick: string, year: number, month: number) {
     try {
@@ -148,7 +149,7 @@ export const useGamesStore = defineStore('games', () => {
     }
 
     allGames.forEach((game) => {
-      updateCache.value[game.url] = true
+      updateCache.value[game.url] = JSON.stringify(game)
     })
 
     games.value = filterRatedGamesAndByStartDate(allGames, startDate)
@@ -169,11 +170,13 @@ export const useGamesStore = defineStore('games', () => {
     let areThereNewGames = false
     newGames.forEach((game: GameType) => {
       if (updateCache.value[game.url]) {
-        return
+        if (updateCache.value[game.url] === JSON.stringify(game)) {
+          return
+        }
       }
 
       games.value.push(game)
-      updateCache.value[game.url] = true
+      updateCache.value[game.url] = JSON.stringify(game)
 
       areThereNewGames = true
     })
