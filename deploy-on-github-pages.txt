@@ -1,16 +1,17 @@
 --- a/src/router/index.ts
 +++ b/src/router/index.ts
-@@ -1,9 +1,9 @@
--import { createRouter, createWebHistory } from 'vue-router'
-+import { createRouter, createWebHashHistory } from 'vue-router'
+@@ -1,4 +1,4 @@
+-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
++import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
  import PConfig from '../pages/PConfig.vue'
  import PGames from '../pages/PGames.vue'
+
+@@ -28,7 +28,7 @@ const routes: RouteRecordRaw[] = [
+ ]
 
  const router = createRouter({
 -  history: createWebHistory(import.meta.env.BASE_URL),
 +  history: createWebHashHistory(import.meta.env.BASE_URL),
-   routes: [
-
 
 --- a/vite.config.ts
 +++ b/vite.config.ts

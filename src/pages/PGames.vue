@@ -4,11 +4,12 @@ import { useRouter } from 'vue-router'
 import {
   DEFAULT_RULES,
   DEFAULT_TIME_CLASS,
+  DEFAULT_INCLUDE_UNRATED,
   useGamesStore,
   type GamesDataType
 } from '@/stores/gamesStore'
 
-const UPDATE_GAMES_INTERVAL = 1000
+const UPDATE_GAMES_INTERVAL = 10000
 const RULES_WHICH_ARE_NOT_DISPLAYED = ['chess', 'auto']
 
 const props = defineProps<{
@@ -16,6 +17,7 @@ const props = defineProps<{
   nick: string | null
   timeClass: string | null
   rules: string | null
+  includeUnrated: boolean | null
 }>()
 
 const router = useRouter()
@@ -23,6 +25,7 @@ const gamesStore = useGamesStore()
 
 const currentTimeClass = ref(props.timeClass ?? DEFAULT_TIME_CLASS)
 const currentRules = ref(props.rules ?? DEFAULT_RULES)
+const currentIncludeUnrated = ref(props.includeUnrated ?? DEFAULT_INCLUDE_UNRATED)
 const currentNick = ref(props.nick ?? '')
 const currentStartTs = ref(props.startTs ? new Date(props.startTs) : new Date())
 
@@ -37,11 +40,12 @@ onMounted(() => {
   localStorage.setItem('lastNick', currentNick.value)
   localStorage.setItem('lastTimeClass', currentTimeClass.value)
   localStorage.setItem('lastRules', currentRules.value)
+  localStorage.setItem('lastIncludeUnrated', currentIncludeUnrated.value.toString())
 })
 
 const loading = ref(true)
 const initPage = async () => {
-  await gamesStore.getAllGames(currentNick.value, currentStartTs.value)
+  await gamesStore.getAllGames(currentNick.value, currentStartTs.value, currentIncludeUnrated.value)
   loading.value = false
 
   await nextTick()
@@ -57,7 +61,11 @@ const updateGames = async () => {
     updateInProgress = true
 
     try {
-      const areThereNewGames = await gamesStore.updateGames(currentNick.value, currentStartTs.value)
+      const areThereNewGames = await gamesStore.updateGames(
+        currentNick.value,
+        currentStartTs.value,
+        currentIncludeUnrated.value
+      )
       if (areThereNewGames || firstUpdate) {
         const allGamesData = gamesStore.analyzeGames(
           currentNick.value,

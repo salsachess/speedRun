@@ -9,14 +9,15 @@ const routes: RouteRecordRaw[] = [
     component: PConfig
   },
   {
-    path: '/games/:nick/:startTs?/:timeClass?/:rules?',
+    path: '/games/:nick/:startTs?/:timeClass?/:rules?/:includeUnrated?',
     name: 'games',
     component: PGames,
     props: (route) => ({
       startTs: route.params.startTs ? parseInt(route.params.startTs as string) : null,
       nick: route.params.nick || null,
       timeClass: route.params.timeClass || null,
-      rules: route.params.rules || null
+      rules: route.params.rules || null,
+      includeUnrated: route.params.includeUnrated ? route.params.includeUnrated === 'true' : null
     })
   },
   {

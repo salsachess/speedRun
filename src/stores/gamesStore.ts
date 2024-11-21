@@ -5,6 +5,7 @@ import { parse as pgnParse, type ParseTree } from '@mliebelt/pgn-parser'
 
 export const DEFAULT_TIME_CLASS = 'auto'
 export const DEFAULT_RULES = 'auto'
+export const DEFAULT_INCLUDE_UNRATED = true
 export const RULE_BUGHOUSE = 'bughouse'
 
 const GAME_RESULT_WIN = 'win'
@@ -102,7 +103,6 @@ export interface GamesDataType {
 export const useGamesStore = defineStore('games', () => {
   const games = ref<GameType[]>([])
   const analysisCache = ref<Record<string, GamesDataType>>({})
-  // const updateCache = ref<Record<string, boolean>>({})
   const updateCache = ref<Record<string, string>>({})
 
   async function fetchGames(nick: string, year: number, month: number) {
@@ -119,13 +119,17 @@ export const useGamesStore = defineStore('games', () => {
     }
   }
 
-  function filterRatedGamesAndByStartDate(games: GameType[], startDate: Date) {
+  function filterRatedGamesAndByStartDate(
+    games: GameType[],
+    startDate: Date,
+    includeUnrated: boolean
+  ) {
     return games
-      .filter((game) => game.rated)
+      .filter((game) => (includeUnrated ? true : game.rated))
       .filter((game) => game.end_time >= startDate.getTime() / 1000)
   }
 
-  async function getAllGames(nick: string, startDate: Date) {
+  async function getAllGames(nick: string, startDate: Date, includeUnrated: boolean) {
     const startYear = startDate.getFullYear()
     const startMonth = startDate.getMonth() + 1
 
@@ -152,10 +156,10 @@ export const useGamesStore = defineStore('games', () => {
       updateCache.value[game.url] = JSON.stringify(game)
     })
 
-    games.value = filterRatedGamesAndByStartDate(allGames, startDate)
+    games.value = filterRatedGamesAndByStartDate(allGames, startDate, includeUnrated)
   }
 
-  async function updateGames(nick: string, startDate: Date) {
+  async function updateGames(nick: string, startDate: Date, includeUnrated: boolean) {
     const now = new Date()
     const currentYear = now.getUTCFullYear()
     const currentMonth = now.getUTCMonth() + 1
@@ -166,7 +170,7 @@ export const useGamesStore = defineStore('games', () => {
       return false
     }
 
-    newGames = filterRatedGamesAndByStartDate(newGames, startDate)
+    newGames = filterRatedGamesAndByStartDate(newGames, startDate, includeUnrated)
     let areThereNewGames = false
     newGames.forEach((game: GameType) => {
       if (updateCache.value[game.url]) {

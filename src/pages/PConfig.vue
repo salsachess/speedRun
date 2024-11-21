@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import VueDatePicker from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
-import { DEFAULT_RULES, DEFAULT_TIME_CLASS } from '@/stores/gamesStore'
+import { DEFAULT_RULES, DEFAULT_TIME_CLASS, DEFAULT_INCLUDE_UNRATED } from '@/stores/gamesStore'
 
 const router = useRouter()
 
@@ -11,6 +11,7 @@ const date = ref(new Date().toISOString())
 const nick = ref(localStorage.getItem('lastNick') || '')
 const timeClass = ref(localStorage.getItem('lastTimeClass') || DEFAULT_TIME_CLASS)
 const rules = ref(localStorage.getItem('lastRules') || DEFAULT_RULES)
+const includeUnrated = ref(localStorage.getItem('lastIncludeUnrated') || DEFAULT_INCLUDE_UNRATED)
 
 const computedUrl = computed(() => {
   if (!nick.value) {
@@ -25,7 +26,8 @@ const computedUrl = computed(() => {
       nick: nick.value,
       startTs: startTS.toString(),
       timeClass: timeClass.value,
-      rules: rules.value
+      rules: rules.value,
+      includeUnrated: includeUnrated.value.toString()
     }
   }).href
 })
@@ -57,6 +59,8 @@ const goToComputedUrl = () => {
     <input type="radio" v-model="rules" value="bughouse" /> bughouse <br />
     <input type="radio" v-model="rules" value="kingofthehill" /> kingofthehill <br />
     <input type="radio" v-model="rules" value="oddschess" /> oddschess <br />
+    <hr />
+    <input type="checkbox" v-model="includeUnrated" /> include unrated <br />
     <hr />
     <VueDatePicker v-model="date" time-picker-inline inline auto-apply utc />
     <hr />
