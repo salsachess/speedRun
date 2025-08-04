@@ -111,7 +111,15 @@ export const useGamesStore = defineStore('games', () => {
         `https://api.chess.com/pub/player/${nick}/games/${year}/${month < 10 ? '0' + month : month}`
       )
 
-      return response?.data?.games ?? []
+      const games = response?.data?.games ?? []
+
+      // Перевіряємо що games це масив і фільтруємо некоректні ігри
+      if (!Array.isArray(games)) {
+        console.warn(`Invalid games data for ${nick} (${year}-${month}):`, games)
+        return []
+      }
+
+      return games.filter((game) => game && typeof game === 'object' && game.url)
     } catch (error) {
       console.error(`Failed to fetch games for ${nick} (${year}-${month}):`, error)
 
@@ -125,11 +133,15 @@ export const useGamesStore = defineStore('games', () => {
     includeUnrated: boolean
   ) {
     return games
+      .filter((game) => game && typeof game === 'object') // Виключаємо null/undefined ігри
       .filter((game) => (includeUnrated ? true : game.rated))
       .filter((game) => game.end_time >= startDate.getTime() / 1000)
   }
 
   async function getAllGames(nick: string, startDate: Date, includeUnrated: boolean) {
+    // Очищуємо стан при новому завантаженні
+    clearGames()
+
     const startYear = startDate.getFullYear()
     const startMonth = startDate.getMonth() + 1
 
@@ -161,8 +173,8 @@ export const useGamesStore = defineStore('games', () => {
 
   async function updateGames(nick: string, startDate: Date, includeUnrated: boolean) {
     const now = new Date()
-    const currentYear = now.getUTCFullYear()
-    const currentMonth = now.getUTCMonth() + 1
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
 
     let newGames = await fetchGames(nick, currentYear, currentMonth)
 
@@ -172,17 +184,30 @@ export const useGamesStore = defineStore('games', () => {
 
     newGames = filterRatedGamesAndByStartDate(newGames, startDate, includeUnrated)
     let areThereNewGames = false
+
     newGames.forEach((game: GameType) => {
-      if (updateCache.value[game.url]) {
-        if (updateCache.value[game.url] === JSON.stringify(game)) {
-          return
+      const gameJsonString = JSON.stringify(game)
+      const cachedGameString = updateCache.value[game.url]
+
+      // Перевіряємо, чи гра вже існує в games.value
+      const existingGameIndex = games.value.findIndex(
+        (existingGame) => existingGame.url === game.url
+      )
+
+      if (existingGameIndex !== -1) {
+        // Гра вже є в games.value - перевіряємо, чи змінилася
+        if (cachedGameString && cachedGameString !== gameJsonString) {
+          // Гра змінилася - оновлюємо
+          games.value[existingGameIndex] = game
+          updateCache.value[game.url] = gameJsonString
+          areThereNewGames = true
         }
+      } else {
+        // Нова гра - додаємо
+        games.value.push(game)
+        updateCache.value[game.url] = gameJsonString
+        areThereNewGames = true
       }
-
-      games.value.push(game)
-      updateCache.value[game.url] = JSON.stringify(game)
-
-      areThereNewGames = true
     })
 
     return areThereNewGames
@@ -190,7 +215,9 @@ export const useGamesStore = defineStore('games', () => {
 
   function analyzeGames(nick: string, timeClass: string, rules: string) {
     let allGames = games.value
+
     if (allGames.length === 0) {
+      console.debug(`No games found for analysis: ${nick}, ${timeClass}, ${rules}`)
       return {
         win: 0,
         count: 0,
@@ -210,18 +237,31 @@ export const useGamesStore = defineStore('games', () => {
       allGames = allGames.filter((game: GameType) => game.time_class === timeClass)
     }
 
+    // Перевіряємо, чи залишилися ігри після фільтрації
+    if (allGames.length === 0) {
+      return {
+        win: 0,
+        count: 0,
+        draw: 0,
+        duration: 0,
+        graphData: [],
+        effectiveTimeClass: timeClass,
+        effectiveRules: rules
+      }
+    }
+
     let effectiveTimeClass = timeClass
     if (effectiveTimeClass === DEFAULT_TIME_CLASS) {
       const lastGame = allGames[allGames.length - 1]
 
-      effectiveTimeClass = lastGame.time_class
+      effectiveTimeClass = lastGame?.time_class || DEFAULT_TIME_CLASS
     }
 
     let effectiveRules = rules
     if (effectiveRules === DEFAULT_RULES) {
       const lastGame = allGames[allGames.length - 1]
 
-      effectiveRules = lastGame.rules
+      effectiveRules = lastGame?.rules || DEFAULT_RULES
     }
 
     const filteredGames: GameType[] = allGames
@@ -240,7 +280,9 @@ export const useGamesStore = defineStore('games', () => {
 
     const gamesData = filteredGames.reduce(
       (acc, game) => {
-        const cachedResult = analysisCache.value[game.url]
+        // Створюємо унікальний ключ кешу який включає параметри аналізу
+        const cacheKey = `${game.url}:${nick}:${effectiveTimeClass}:${effectiveRules}`
+        const cachedResult = analysisCache.value[cacheKey]
         if (cachedResult) {
           return addResultAndReturnAcc(acc, cachedResult)
         }
@@ -281,7 +323,7 @@ export const useGamesStore = defineStore('games', () => {
         gameData.graphData = [{ x: acc.duration, y: rating }]
 
         if (analysisCache.value) {
-          analysisCache.value[game.url] = gameData
+          analysisCache.value[cacheKey] = gameData
         }
 
         return addResultAndReturnAcc(acc, gameData)
@@ -300,5 +342,37 @@ export const useGamesStore = defineStore('games', () => {
     return gamesData
   }
 
-  return { games, getAllGames, updateGames, analyzeGames }
+  function clearCache() {
+    analysisCache.value = {}
+    updateCache.value = {}
+  }
+
+  function clearAnalysisCacheForParams(nick: string, timeClass?: string, rules?: string) {
+    // Очищаємо кеш для конкретних параметрів
+    Object.keys(analysisCache.value).forEach((key) => {
+      const [url, cachedNick, cachedTimeClass, cachedRules] = key.split(':')
+      if (
+        cachedNick === nick &&
+        (!timeClass || cachedTimeClass === timeClass) &&
+        (!rules || cachedRules === rules)
+      ) {
+        delete analysisCache.value[key]
+      }
+    })
+  }
+
+  function clearGames() {
+    games.value = []
+    clearCache()
+  }
+
+  return {
+    games,
+    getAllGames,
+    updateGames,
+    analyzeGames,
+    clearCache,
+    clearAnalysisCacheForParams,
+    clearGames
+  }
 })

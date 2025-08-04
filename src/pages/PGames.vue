@@ -66,7 +66,7 @@ const updateGames = async () => {
         currentStartTs.value,
         currentIncludeUnrated.value
       )
-      if (areThereNewGames || firstUpdate) {
+      if ((areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
         const allGamesData = gamesStore.analyzeGames(
           currentNick.value,
           currentTimeClass.value,
