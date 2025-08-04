@@ -45,8 +45,26 @@ onMounted(() => {
 
 const loading = ref(true)
 const initPage = async () => {
-  await gamesStore.getAllGames(currentNick.value, currentStartTs.value, currentIncludeUnrated.value)
-  loading.value = false
+  try {
+    await gamesStore.getAllGames(
+      currentNick.value,
+      currentStartTs.value,
+      currentIncludeUnrated.value
+    )
+
+    // Якщо немає ігор, встановлюємо дефолтні значення
+    if (gamesStore.games.length === 0) {
+      effectiveTimeClass.value = currentTimeClass.value
+      effectiveRules.value = currentRules.value
+    }
+  } catch (error) {
+    console.error('Error loading games:', error)
+    // Встановлюємо дефолтні значення при помилці
+    effectiveTimeClass.value = currentTimeClass.value
+    effectiveRules.value = currentRules.value
+  } finally {
+    loading.value = false
+  }
 
   await nextTick()
 
@@ -77,6 +95,8 @@ const updateGames = async () => {
 
         firstUpdate = false
       }
+    } catch (error) {
+      console.error('Error in updateGames:', error)
     } finally {
       updateInProgress = false
     }
@@ -142,8 +162,8 @@ const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
 
 const resultText = ref('')
 const gamesTimeString = ref('')
-const effectiveTimeClass = ref('')
-const effectiveRules = ref('')
+const effectiveTimeClass = ref(currentTimeClass.value)
+const effectiveRules = ref(currentRules.value)
 const chart = ref<any>(null)
 const chartData = ref<any>(null)
 const graphDataLengthOld = ref(0)
@@ -170,7 +190,10 @@ const getFontSize = (text: string) => {
 
 <template>
   <div class="result">
-    <div v-if="loading || !effectiveTimeClass">loading...</div>
+    <div v-if="loading">loading...</div>
+    <div v-else-if="gamesStore.games.length === 0" class="center-screen">
+      <span style="font-size: 4vw; color: gray">No games found</span>
+    </div>
     <table v-else class="full-page-table">
       <tbody>
         <tr>

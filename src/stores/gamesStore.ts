@@ -108,7 +108,10 @@ export const useGamesStore = defineStore('games', () => {
   async function fetchGames(nick: string, year: number, month: number) {
     try {
       const response = await axios.get(
-        `https://api.chess.com/pub/player/${nick}/games/${year}/${month < 10 ? '0' + month : month}`
+        `https://api.chess.com/pub/player/${nick}/games/${year}/${month < 10 ? '0' + month : month}`,
+        {
+          timeout: 10000 // 10 секунд таймаут
+        }
       )
 
       const games = response?.data?.games ?? []
@@ -139,6 +142,8 @@ export const useGamesStore = defineStore('games', () => {
   }
 
   async function getAllGames(nick: string, startDate: Date, includeUnrated: boolean) {
+    console.debug(`Starting getAllGames for ${nick} from ${startDate.toDateString()}`)
+
     // Очищуємо стан при новому завантаженні
     clearGames()
 
@@ -148,6 +153,10 @@ export const useGamesStore = defineStore('games', () => {
     const now = new Date()
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth() + 1
+
+    console.debug(
+      `Fetching games from ${startYear}-${startMonth} to ${currentYear}-${currentMonth}`
+    )
 
     const allGames = []
     let year
@@ -169,6 +178,10 @@ export const useGamesStore = defineStore('games', () => {
     })
 
     games.value = filterRatedGamesAndByStartDate(allGames, startDate, includeUnrated)
+
+    console.debug(
+      `getAllGames completed: loaded ${allGames.length} total games, filtered to ${games.value.length} games`
+    )
   }
 
   async function updateGames(nick: string, startDate: Date, includeUnrated: boolean) {
