@@ -153,10 +153,9 @@ const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
 
       return chart.value
     })
-  } else if (graphDataLengthOld.value !== allGamesData.graphData.length) {
+  } else {
     chartData.value.datum(data()).transition().duration(500).call(chart.value)
     nv.utils.windowResize(chart.value.update)
-    graphDataLengthOld.value = allGamesData.graphData.length
   }
 }
 
@@ -166,7 +165,6 @@ const effectiveTimeClass = ref(currentTimeClass.value)
 const effectiveRules = ref(currentRules.value)
 const chart = ref<any>(null)
 const chartData = ref<any>(null)
-const graphDataLengthOld = ref(0)
 
 const getFontSize = (text: string) => {
   const length = text.length

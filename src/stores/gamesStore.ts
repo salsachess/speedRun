@@ -59,7 +59,7 @@ const getDurationFromPgn = (pgnString: string) => {
     }
 
     return duration
-  } catch (e) {
+  } catch (_e) {
     console.error('Failed to parse pgn: ' + pgnString)
 
     return 0
@@ -102,7 +102,15 @@ export interface GamesDataType {
 
 export const useGamesStore = defineStore('games', () => {
   const games = ref<GameType[]>([])
-  const analysisCache = ref<Record<string, GamesDataType>>({})
+  // Кеш пер-гри для конкретного ніку: стабільні поля (без координати X)
+  interface PerGameAnalysisType {
+    rating: number
+    win: number
+    draw: number
+    duration: number
+  }
+
+  const analysisCache = ref<Record<string, PerGameAnalysisType>>({})
   const updateCache = ref<Record<string, string>>({})
 
   async function fetchGames(nick: string, year: number, month: number) {
@@ -250,7 +258,7 @@ export const useGamesStore = defineStore('games', () => {
       allGames = allGames.filter((game: GameType) => game.time_class === timeClass)
     }
 
-    // Перевіряємо, чи залишилися ігри після фільтрації
+    // Перевіряємо, чи залишилися ігри після попередньої фільтрації
     if (allGames.length === 0) {
       return {
         win: 0,
@@ -263,94 +271,76 @@ export const useGamesStore = defineStore('games', () => {
       }
     }
 
+    // Відсортуємо за часом завершення зростаюче для стабільного порядку
+    const allGamesSorted = [...allGames].sort((a, b) => a.end_time - b.end_time)
+
+    // Обчислюємо ефективні параметри з урахуванням відсортованого списку
     let effectiveTimeClass = timeClass
     if (effectiveTimeClass === DEFAULT_TIME_CLASS) {
-      const lastGame = allGames[allGames.length - 1]
-
+      const lastGame = allGamesSorted[allGamesSorted.length - 1]
       effectiveTimeClass = lastGame?.time_class || DEFAULT_TIME_CLASS
     }
 
     let effectiveRules = rules
     if (effectiveRules === DEFAULT_RULES) {
-      const lastGame = allGames[allGames.length - 1]
-
+      const lastGame = allGamesSorted[allGamesSorted.length - 1]
       effectiveRules = lastGame?.rules || DEFAULT_RULES
     }
 
-    const filteredGames: GameType[] = allGames
+    // Фільтруємо під ефективні параметри і залишаємо відсортований порядок
+    const filteredGames: GameType[] = allGamesSorted
       .filter((game: GameType) => game.time_class === effectiveTimeClass)
       .filter((game: GameType) => game.rules === effectiveRules)
 
-    const addResultAndReturnAcc = (acc: GamesDataType, gameData: GamesDataType) => {
-      acc.win += gameData.win
-      acc.count += gameData.count
-      acc.draw += gameData.draw
-      acc.duration += gameData.duration
-      acc.graphData = [...acc.graphData, ...gameData.graphData]
-
-      return acc
+    const initialAcc: GamesDataType = {
+      win: 0,
+      count: 0,
+      draw: 0,
+      duration: 0,
+      graphData: [],
+      effectiveTimeClass,
+      effectiveRules
     }
 
-    const gamesData = filteredGames.reduce(
-      (acc, game) => {
-        // Створюємо унікальний ключ кешу який включає параметри аналізу
-        const cacheKey = `${game.url}:${nick}:${effectiveTimeClass}:${effectiveRules}`
-        const cachedResult = analysisCache.value[cacheKey]
-        if (cachedResult) {
-          return addResultAndReturnAcc(acc, cachedResult)
-        }
+    const gamesData = filteredGames.reduce((acc, game) => {
+      const cacheKey = `${game.url}:${nick}`
+      let per = analysisCache.value[cacheKey]
 
-        const gameData: GamesDataType = {
-          win: 0,
-          count: 1,
-          draw: 0,
-          duration: 0,
-          graphData: [],
-          effectiveTimeClass,
-          effectiveRules
-        }
-
-        let rating
-
+      if (!per) {
         const nickLowerCased = nick.toLowerCase()
+        let rating: number | undefined
+        let win = 0
+        let draw = 0
+
         if (game.white.username.toLowerCase() === nickLowerCased) {
           rating = game.white.rating
-          gameData.win += game.white.result === GAME_RESULT_WIN ? 1 : 0
+          win = game.white.result === GAME_RESULT_WIN ? 1 : 0
         } else if (game.black.username.toLowerCase() === nickLowerCased) {
           rating = game.black.rating
-          gameData.win += game.black.result === GAME_RESULT_WIN ? 1 : 0
+          win = game.black.result === GAME_RESULT_WIN ? 1 : 0
         } else {
-          return acc
+          return acc // гра не для цього ніку
         }
 
         if (game.white.result === game.black.result) {
-          gameData.draw += 1
+          draw = 1
         }
 
-        if (game.rules === RULE_BUGHOUSE) {
-          gameData.duration = +game.time_control
-        } else {
-          gameData.duration = getDurationFromPgn(game.pgn)
-        }
+        const duration =
+          game.rules === RULE_BUGHOUSE ? +game.time_control : getDurationFromPgn(game.pgn)
 
-        gameData.graphData = [{ x: acc.duration, y: rating }]
+        per = { rating, win, draw, duration }
+        analysisCache.value[cacheKey] = per
+      }
 
-        if (analysisCache.value) {
-          analysisCache.value[cacheKey] = gameData
-        }
+      acc.graphData.push({ x: acc.duration, y: per.rating })
+      acc.win += per.win
+      acc.count += 1
+      acc.draw += per.draw
+      acc.duration += per.duration
 
-        return addResultAndReturnAcc(acc, gameData)
-      },
-      {
-        win: 0,
-        count: 0,
-        draw: 0,
-        duration: 0,
-        graphData: [],
-        effectiveTimeClass,
-        effectiveRules
-      } as GamesDataType
-    )
+      return acc
+    }, initialAcc)
 
     return gamesData
   }
@@ -360,15 +350,11 @@ export const useGamesStore = defineStore('games', () => {
     updateCache.value = {}
   }
 
-  function clearAnalysisCacheForParams(nick: string, timeClass?: string, rules?: string) {
-    // Очищаємо кеш для конкретних параметрів
+  function clearAnalysisCacheForParams(nick: string) {
+    // Очищаємо кеш для конкретного ніку
     Object.keys(analysisCache.value).forEach((key) => {
-      const [url, cachedNick, cachedTimeClass, cachedRules] = key.split(':')
-      if (
-        cachedNick === nick &&
-        (!timeClass || cachedTimeClass === timeClass) &&
-        (!rules || cachedRules === rules)
-      ) {
+      const [, cachedNick] = key.split(':')
+      if (cachedNick === nick) {
         delete analysisCache.value[key]
       }
     })
