@@ -73,32 +73,34 @@ const initPage = async () => {
 
 let updateInProgress = false
 let firstUpdate = true
+let resizeUnsubscribe: (() => void) | null = null
 const updateGames = async () => {
   const updateAndScheduleNext = async () => {
-    if (updateInProgress) return
-    updateInProgress = true
+    if (!updateInProgress) {
+      updateInProgress = true
 
-    try {
-      const areThereNewGames = await gamesStore.updateGames(
-        currentNick.value,
-        currentStartTs.value,
-        currentIncludeUnrated.value
-      )
-      if ((areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
-        const allGamesData = gamesStore.analyzeGames(
+      try {
+        const areThereNewGames = await gamesStore.updateGames(
           currentNick.value,
-          currentTimeClass.value,
-          currentRules.value
+          currentStartTs.value,
+          currentIncludeUnrated.value
         )
+        if ((areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
+          const allGamesData = gamesStore.analyzeGames(
+            currentNick.value,
+            currentTimeClass.value,
+            currentRules.value
+          )
 
-        prepareGamesDataForVisualization(allGamesData)
+          prepareGamesDataForVisualization(allGamesData)
 
-        firstUpdate = false
+          firstUpdate = false
+        }
+      } catch (error) {
+        console.error('Error in updateGames:', error)
+      } finally {
+        updateInProgress = false
       }
-    } catch (error) {
-      console.error('Error in updateGames:', error)
-    } finally {
-      updateInProgress = false
     }
 
     setTimeout(updateAndScheduleNext, UPDATE_GAMES_INTERVAL)
@@ -149,13 +151,15 @@ const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
       chartData.value = d3.select('#chart svg').datum(data())
       chartData.value.transition().duration(500).call(chart.value)
 
-      nv.utils.windowResize(chart.value.update)
+      resizeUnsubscribe = nv.utils.windowResize(chart.value.update)
 
       return chart.value
     })
   } else {
     chartData.value.datum(data()).transition().duration(500).call(chart.value)
-    nv.utils.windowResize(chart.value.update)
+    // Відписуємось від попереднього resize listener перед додаванням нового
+    if (resizeUnsubscribe) resizeUnsubscribe()
+    resizeUnsubscribe = nv.utils.windowResize(chart.value.update)
   }
 }
 
