@@ -182,11 +182,10 @@ export const useGamesStore = defineStore('games', () => {
         ...(includeUnrated ? {} : { rated: 'true' })
       })
       await ensureLichessRateLimit();
-      const token = import.meta.env.VITE_LICHESS_TOKEN;
+      // Lichess public export API does not require authentication.
       const response = await axios.get(url, {
         headers: {
-          Accept: 'application/x-ndjson',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          Accept: 'application/x-ndjson'
         },
         responseType: 'text',
         timeout: 15000
