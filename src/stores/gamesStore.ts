@@ -207,11 +207,9 @@ export const useGamesStore = defineStore('games', () => {
             pgnInJson: true,
             ...(includeUnrated ? {} : { rated: 'true' })
           })
-          const token = import.meta.env.VITE_LICHESS_TOKEN;
           const retryResp = await axios.get(url, {
             headers: {
-              Accept: 'application/x-ndjson',
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
+              Accept: 'application/x-ndjson'
             },
             responseType: 'text',
             timeout: 15000
