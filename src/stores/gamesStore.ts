@@ -359,7 +359,9 @@ export const useGamesStore = defineStore('games', () => {
   ) {
     let resolvedPlatform = platform
     if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
-      resolvedPlatform = activePlatform.value !== DEFAULT_PLATFORM ? activePlatform.value : PLATFORM_CHESSCOM
+      // Re-detect the latest platform each time we update games to handle switches between Lichess and Chess.com on the fly
+      resolvedPlatform = await detectLatestPlatform(nick)
+      activePlatform.value = resolvedPlatform
     }
 
     let newGames: GameType[] = []
