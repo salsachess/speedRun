@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   DEFAULT_RULES,
   DEFAULT_TIME_CLASS,
   DEFAULT_INCLUDE_UNRATED,
+  DEFAULT_PLATFORM,
   useGamesStore,
   type GamesDataType
 } from '@/stores/gamesStore'
@@ -18,6 +19,7 @@ const props = defineProps<{
   timeClass: string | null
   rules: string | null
   includeUnrated: boolean | null
+  platform: string | null
 }>()
 
 const router = useRouter()
@@ -26,6 +28,7 @@ const gamesStore = useGamesStore()
 const currentTimeClass = ref(props.timeClass ?? DEFAULT_TIME_CLASS)
 const currentRules = ref(props.rules ?? DEFAULT_RULES)
 const currentIncludeUnrated = ref(props.includeUnrated ?? DEFAULT_INCLUDE_UNRATED)
+const currentPlatform = ref(props.platform ?? DEFAULT_PLATFORM)
 const currentNick = ref(props.nick ?? '')
 const currentStartTs = ref(props.startTs ? new Date(props.startTs) : new Date())
 
@@ -38,6 +41,7 @@ onMounted(() => {
 
   initPage()
   localStorage.setItem('lastNick', currentNick.value)
+  localStorage.setItem('lastPlatform', currentPlatform.value)
   localStorage.setItem('lastTimeClass', currentTimeClass.value)
   localStorage.setItem('lastRules', currentRules.value)
   localStorage.setItem('lastIncludeUnrated', currentIncludeUnrated.value.toString())
@@ -49,19 +53,20 @@ const initPage = async () => {
     await gamesStore.getAllGames(
       currentNick.value,
       currentStartTs.value,
-      currentIncludeUnrated.value
+      currentIncludeUnrated.value,
+      currentPlatform.value
     )
 
-    // Якщо немає ігор, встановлюємо дефолтні значення
     if (gamesStore.games.length === 0) {
       effectiveTimeClass.value = currentTimeClass.value
       effectiveRules.value = currentRules.value
+      effectivePlatform.value = gamesStore.activePlatform || currentPlatform.value
     }
   } catch (error) {
     console.error('Error loading games:', error)
-    // Встановлюємо дефолтні значення при помилці
     effectiveTimeClass.value = currentTimeClass.value
     effectiveRules.value = currentRules.value
+    effectivePlatform.value = currentPlatform.value
   } finally {
     loading.value = false
   }
@@ -83,7 +88,8 @@ const updateGames = async () => {
         const areThereNewGames = await gamesStore.updateGames(
           currentNick.value,
           currentStartTs.value,
-          currentIncludeUnrated.value
+          currentIncludeUnrated.value,
+          currentPlatform.value
         )
         if ((areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
           const allGamesData = gamesStore.analyzeGames(
@@ -120,6 +126,7 @@ const getTimeString = (secondsTotal: number) => {
 const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
   effectiveTimeClass.value = allGamesData.effectiveTimeClass
   effectiveRules.value = allGamesData.effectiveRules
+  effectivePlatform.value = allGamesData.effectivePlatform
 
   const loss = allGamesData.count - allGamesData.win - allGamesData.draw
   resultText.value = '+' + allGamesData.win + ' -' + loss + ' =' + allGamesData.draw
@@ -157,7 +164,6 @@ const prepareGamesDataForVisualization = (allGamesData: GamesDataType) => {
     })
   } else {
     chartData.value.datum(data()).transition().duration(500).call(chart.value)
-    // Відписуємось від попереднього resize listener перед додаванням нового
     if (resizeUnsubscribe) resizeUnsubscribe()
     resizeUnsubscribe = nv.utils.windowResize(chart.value.update)
   }
@@ -167,8 +173,13 @@ const resultText = ref('')
 const gamesTimeString = ref('')
 const effectiveTimeClass = ref(currentTimeClass.value)
 const effectiveRules = ref(currentRules.value)
+const effectivePlatform = ref(currentPlatform.value)
 const chart = ref<any>(null)
 const chartData = ref<any>(null)
+
+const effectivePlatformDisplay = computed(() => {
+  return effectivePlatform.value === 'lichess' ? 'lichess.org' : 'chess.com'
+})
 
 const getFontSize = (text: string) => {
   const length = text.length
@@ -195,6 +206,7 @@ const getFontSize = (text: string) => {
     <div v-if="loading">loading...</div>
     <div v-else-if="gamesStore.games.length === 0" class="center-screen">
       <span style="font-size: 4vw; color: gray">No games found</span>
+      <span style="font-size: 2vw; color: lightgray; margin-top: 10px;">Platform: {{ effectivePlatformDisplay }}</span>
     </div>
     <table v-else class="full-page-table">
       <tbody>
@@ -209,11 +221,13 @@ const getFontSize = (text: string) => {
           </td>
           <td class="half-width">
             <div id="chart" class="chart-container">
-              <div class="time-class-overlay" :style="{ fontSize: '8vw' }">
+              <div class="time-class-overlay" :style="{ fontSize: '6vw' }">
                 <template v-if="!RULES_WHICH_ARE_NOT_DISPLAYED.includes(effectiveRules)"
                   >{{ effectiveRules }} <br
                 /></template>
                 {{ effectiveTimeClass }}
+                <br />
+                <span class="platform-subtitle">{{ effectivePlatformDisplay }}</span>
               </div>
               <svg></svg>
             </div>
@@ -278,6 +292,13 @@ const getFontSize = (text: string) => {
   pointer-events: none;
   z-index: 1;
   text-align: center;
+}
+
+.platform-subtitle {
+  font-size: 0.5em;
+  opacity: 0.8;
+  display: inline-block;
+  margin-top: 5px;
 }
 
 #chart svg {

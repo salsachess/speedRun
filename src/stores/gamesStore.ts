@@ -2,10 +2,26 @@ import axios from 'axios'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { parse as pgnParse, type ParseTree } from '@mliebelt/pgn-parser'
-
+import { buildLichessUrl, parseLichessNdjson } from '@/utils/lichess'
+export const DEFAULT_PLATFORM = 'auto'
 export const DEFAULT_TIME_CLASS = 'auto'
 export const DEFAULT_RULES = 'auto'
 export const DEFAULT_INCLUDE_UNRATED = true
+
+export const PLATFORM_CHESSCOM = 'chesscom'
+export const PLATFORM_LICHESS = 'lichess'
+
+// Rate‑limit handling for Lichess API (max 1 request per minute)
+let lastLichessRequestTime = 0;
+async function ensureLichessRateLimit() {
+  const now = Date.now();
+  const elapsed = now - lastLichessRequestTime;
+  if (elapsed < 60000) {
+    await new Promise((resolve) => setTimeout(resolve, 60000 - elapsed));
+  }
+  lastLichessRequestTime = Date.now();
+}
+
 export const RULE_BUGHOUSE = 'bughouse'
 
 const GAME_RESULT_WIN = 'win'
@@ -45,25 +61,36 @@ const getDurationFromPgn = (pgnString: string) => {
       isNaN(tStart.getTime()) ||
       isNaN(tEnd.getTime())
     ) {
-      console.error('Invalid date object for pgn: ' + pgnString)
-
       return 0
     }
 
     const duration = Math.round(tEnd.getTime() / 1000) - Math.round(tStart.getTime() / 1000)
 
     if (isNaN(duration) || duration < 0) {
-      console.error('Invalid duration for pgn: ' + pgnString)
-
       return 0
     }
 
     return duration
   } catch (_e) {
-    console.error('Failed to parse pgn: ' + pgnString)
-
     return 0
   }
+}
+
+export function normalizeRules(rule: string): string {
+  if (!rule) return 'chess'
+  const lower = rule.toLowerCase()
+  if (lower === 'standard') return 'chess'
+  if (lower === 'kingofthehill') return 'kingofthehill'
+  if (lower === 'threecheck') return 'threecheck'
+  if (lower === 'racingkings') return 'racingkings'
+  return lower
+}
+
+export function normalizeTimeClass(tc: string): string {
+  if (!tc) return 'blitz'
+  const lower = tc.toLowerCase()
+  if (lower === 'ultrabullet') return 'ultraBullet'
+  return lower
 }
 
 interface PlayerType {
@@ -74,20 +101,22 @@ interface PlayerType {
   uuid: string
 }
 
-interface GameType {
+export interface GameType {
   url: string
   pgn: string
   time_control: string
   end_time: number
   rated: boolean
-  tcn: string
-  uuid: string
-  initial_setup: string
-  fen: string
+  tcn?: string
+  uuid?: string
+  initial_setup?: string
+  fen?: string
   time_class: string
   rules: string
+  platform: string
   white: PlayerType
   black: PlayerType
+  computedDuration?: number
 }
 
 export interface GamesDataType {
@@ -98,11 +127,13 @@ export interface GamesDataType {
   graphData: { x: number; y: number }[]
   effectiveTimeClass: string
   effectiveRules: string
+  effectivePlatform: string
 }
 
 export const useGamesStore = defineStore('games', () => {
   const games = ref<GameType[]>([])
-  // Кеш пер-гри для конкретного ніку: стабільні поля (без координати X)
+  const activePlatform = ref<string>(DEFAULT_PLATFORM)
+
   interface PerGameAnalysisType {
     rating: number
     win: number
@@ -113,29 +144,153 @@ export const useGamesStore = defineStore('games', () => {
   const analysisCache = ref<Record<string, PerGameAnalysisType>>({})
   const updateCache = ref<Record<string, string>>({})
 
-  async function fetchGames(nick: string, year: number, month: number) {
+  async function fetchChessComGames(nick: string, year: number, month: number): Promise<GameType[]> {
     try {
       const response = await axios.get(
         `https://api.chess.com/pub/player/${nick}/games/${year}/${month < 10 ? '0' + month : month}`,
         {
-          timeout: 10000 // 10 секунд таймаут
+          timeout: 10000
         }
       )
 
-      const games = response?.data?.games ?? []
+      const rawGames = response?.data?.games ?? []
 
-      // Перевіряємо що games це масив і фільтруємо некоректні ігри
-      if (!Array.isArray(games)) {
-        console.warn(`Invalid games data for ${nick} (${year}-${month}):`, games)
+      if (!Array.isArray(rawGames)) {
         return []
       }
 
-      return games.filter((game) => game && typeof game === 'object' && game.url)
+      return rawGames
+        .filter((game) => game && typeof game === 'object' && game.url)
+        .map((game) => ({
+          ...game,
+          platform: PLATFORM_CHESSCOM,
+          rules: normalizeRules(game.rules || 'chess'),
+          time_class: normalizeTimeClass(game.time_class || 'blitz')
+        }))
     } catch (error) {
-      console.error(`Failed to fetch games for ${nick} (${year}-${month}):`, error)
-
+      console.error(`Failed to fetch Chess.com games for ${nick} (${year}-${month}):`, error)
       return []
     }
+  }
+
+  async function fetchLichessGames(nick: string, startDate: Date, includeUnrated: boolean, max: number = 500): Promise<GameType[]> {
+    try {
+      const url = buildLichessUrl(nick, {
+        since: startDate.getTime(),
+        max,
+        pgnInJson: true,
+        ...(includeUnrated ? {} : { rated: 'true' })
+      })
+      await ensureLichessRateLimit();
+      const token = import.meta.env.VITE_LICHESS_TOKEN;
+      const response = await axios.get(url, {
+        headers: {
+          Accept: 'application/x-ndjson',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        responseType: 'text',
+        timeout: 15000
+      })
+      if (!response.data || typeof response.data !== 'string') {
+        return []
+      }
+      const games = parseLichessNdjson(response.data)
+      return games
+    } catch (error: any) {
+      // If rate limited, wait and retry once
+      if (error && error.response && error.response.status === 429) {
+        console.warn('Lichess API rate limit reached, waiting 60 seconds before retry');
+        await new Promise((resolve) => setTimeout(resolve, 60000));
+        try {
+          const url = buildLichessUrl(nick, {
+            since: startDate.getTime(),
+            max,
+            pgnInJson: true,
+            ...(includeUnrated ? {} : { rated: 'true' })
+          })
+          const token = import.meta.env.VITE_LICHESS_TOKEN;
+          const retryResp = await axios.get(url, {
+            headers: {
+              Accept: 'application/x-ndjson',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            responseType: 'text',
+            timeout: 15000
+          });
+          if (retryResp.data && typeof retryResp.data === 'string') {
+            return parseLichessNdjson(retryResp.data);
+          }
+        } catch (retryErr) {
+          console.error('Retry after rate limit also failed:', retryErr);
+        }
+      }
+      console.error(`Failed to fetch Lichess games for ${nick}:`, error);
+      // Fallback to older endpoint without since filter
+      try {
+        const fallbackUrl = buildLichessUrl(nick, {
+          max,
+          pgnInJson: true,
+          ...(includeUnrated ? {} : { rated: 'true' })
+        });
+        const fallbackResp = await axios.get(fallbackUrl, {
+          headers: { Accept: 'application/x-ndjson' },
+          responseType: 'text',
+          timeout: 15000
+        });
+        if (fallbackResp.data && typeof fallbackResp.data === 'string') {
+          return parseLichessNdjson(fallbackResp.data);
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback Lichess fetch also failed:', fallbackErr);
+      }
+      return [];
+    }
+  }
+
+  async function detectLatestPlatform(nick: string): Promise<string> {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+
+    let chessComLatestTime = 0
+    let lichessLatestTime = 0
+
+    // Fetch latest Chess.com game from current month (or previous month if none)
+    try {
+      let chessComGames = await fetchChessComGames(nick, currentYear, currentMonth)
+      if (chessComGames.length === 0 && currentMonth > 1) {
+        chessComGames = await fetchChessComGames(nick, currentYear, currentMonth - 1)
+      } else if (chessComGames.length === 0 && currentMonth === 1) {
+        chessComGames = await fetchChessComGames(nick, currentYear - 1, 12)
+      }
+      if (chessComGames.length > 0) {
+        chessComLatestTime = Math.max(...chessComGames.map((g) => g.end_time))
+      }
+    } catch (e) {
+      console.error('Failed to fetch recent Chess.com game for detection:', e)
+    }
+
+    // Fetch latest Lichess game
+    try {
+      try {
+        const recentGames = await fetchLichessGames(nick, new Date(0), true, 1)
+        if (recentGames.length > 0) {
+          const first = recentGames[0]
+          lichessLatestTime = first.end_time || 0
+        }
+      } catch (e) {
+        console.error('Failed to fetch recent Lichess game for detection:', e)
+      }
+    } catch (e) {
+      console.error('Failed to fetch recent Lichess game for detection:', e)
+    }
+
+    console.debug(`Platform detection for ${nick}: Chess.com latest timestamp=${chessComLatestTime}, Lichess latest timestamp=${lichessLatestTime}`)
+
+    if (lichessLatestTime > chessComLatestTime) {
+      return PLATFORM_LICHESS
+    }
+    return PLATFORM_CHESSCOM
   }
 
   function filterRatedGamesAndByStartDate(
@@ -144,40 +299,47 @@ export const useGamesStore = defineStore('games', () => {
     includeUnrated: boolean
   ) {
     return games
-      .filter((game) => game && typeof game === 'object') // Виключаємо null/undefined ігри
+      .filter((game) => game && typeof game === 'object')
       .filter((game) => (includeUnrated ? true : game.rated))
       .filter((game) => game.end_time >= startDate.getTime() / 1000)
   }
 
-  async function getAllGames(nick: string, startDate: Date, includeUnrated: boolean) {
-    console.debug(`Starting getAllGames for ${nick} from ${startDate.toDateString()}`)
-
-    // Очищуємо стан при новому завантаженні
+  async function getAllGames(
+    nick: string,
+    startDate: Date,
+    includeUnrated: boolean,
+    platform: string = DEFAULT_PLATFORM
+  ) {
+    console.debug(`Starting getAllGames for ${nick} from ${startDate.toDateString()}, platform=${platform}`)
     clearGames()
 
-    const startYear = startDate.getFullYear()
-    const startMonth = startDate.getMonth() + 1
+    let resolvedPlatform = platform
+    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
+      resolvedPlatform = await detectLatestPlatform(nick)
+    }
+    activePlatform.value = resolvedPlatform
 
-    const now = new Date()
-    const currentYear = now.getFullYear()
-    const currentMonth = now.getMonth() + 1
+    let allGames: GameType[] = []
 
-    console.debug(
-      `Fetching games from ${startYear}-${startMonth} to ${currentYear}-${currentMonth}`
-    )
+    if (resolvedPlatform === PLATFORM_LICHESS) {
+      allGames = await fetchLichessGames(nick, startDate, includeUnrated)
+    } else {
+      const startYear = startDate.getFullYear()
+      const startMonth = startDate.getMonth() + 1
 
-    const allGames = []
-    let year
-    let month
-    for (year = startYear; year <= currentYear; year += 1) {
-      for (
-        month = startYear === year ? startMonth : 1;
-        month <= (year === currentYear ? currentMonth : 12);
-        month += 1
-      ) {
-        const gamesForAMonth = await fetchGames(nick, year, month)
+      const now = new Date()
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth() + 1
 
-        allGames.push(...gamesForAMonth)
+      for (let year = startYear; year <= currentYear; year += 1) {
+        for (
+          let month = startYear === year ? startMonth : 1;
+          month <= (year === currentYear ? currentMonth : 12);
+          month += 1
+        ) {
+          const gamesForAMonth = await fetchChessComGames(nick, year, month)
+          allGames.push(...gamesForAMonth)
+        }
       }
     }
 
@@ -188,16 +350,30 @@ export const useGamesStore = defineStore('games', () => {
     games.value = filterRatedGamesAndByStartDate(allGames, startDate, includeUnrated)
 
     console.debug(
-      `getAllGames completed: loaded ${allGames.length} total games, filtered to ${games.value.length} games`
+      `getAllGames completed for platform ${resolvedPlatform}: loaded ${allGames.length} total games, filtered to ${games.value.length} games`
     )
   }
 
-  async function updateGames(nick: string, startDate: Date, includeUnrated: boolean) {
-    const now = new Date()
-    const currentYear = now.getFullYear()
-    const currentMonth = now.getMonth() + 1
+  async function updateGames(
+    nick: string,
+    startDate: Date,
+    includeUnrated: boolean,
+    platform: string = DEFAULT_PLATFORM
+  ) {
+    let resolvedPlatform = platform
+    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
+      resolvedPlatform = activePlatform.value !== DEFAULT_PLATFORM ? activePlatform.value : PLATFORM_CHESSCOM
+    }
 
-    let newGames = await fetchGames(nick, currentYear, currentMonth)
+    let newGames: GameType[] = []
+    if (resolvedPlatform === PLATFORM_LICHESS) {
+      newGames = await fetchLichessGames(nick, startDate, includeUnrated)
+    } else {
+      const now = new Date()
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth() + 1
+      newGames = await fetchChessComGames(nick, currentYear, currentMonth)
+    }
 
     if (!newGames.length) {
       return false
@@ -210,21 +386,17 @@ export const useGamesStore = defineStore('games', () => {
       const gameJsonString = JSON.stringify(game)
       const cachedGameString = updateCache.value[game.url]
 
-      // Перевіряємо, чи гра вже існує в games.value
       const existingGameIndex = games.value.findIndex(
         (existingGame) => existingGame.url === game.url
       )
 
       if (existingGameIndex !== -1) {
-        // Гра вже є в games.value - перевіряємо, чи змінилася
         if (cachedGameString && cachedGameString !== gameJsonString) {
-          // Гра змінилася - оновлюємо
           games.value[existingGameIndex] = game
           updateCache.value[game.url] = gameJsonString
           areThereNewGames = true
         }
       } else {
-        // Нова гра - додаємо
         games.value.push(game)
         updateCache.value[game.url] = gameJsonString
         areThereNewGames = true
@@ -237,6 +409,8 @@ export const useGamesStore = defineStore('games', () => {
   function analyzeGames(nick: string, timeClass: string, rules: string) {
     let allGames = games.value
 
+    const effectivePlatform = activePlatform.value || PLATFORM_CHESSCOM
+
     if (allGames.length === 0) {
       console.debug(`No games found for analysis: ${nick}, ${timeClass}, ${rules}`)
       return {
@@ -246,19 +420,24 @@ export const useGamesStore = defineStore('games', () => {
         duration: 0,
         graphData: [],
         effectiveTimeClass: timeClass,
-        effectiveRules: rules
+        effectiveRules: rules,
+        effectivePlatform
       }
     }
 
-    if (rules !== DEFAULT_RULES) {
-      allGames = allGames.filter((game: GameType) => game.rules === rules)
+    const reqRulesNormalized = rules !== DEFAULT_RULES ? normalizeRules(rules) : DEFAULT_RULES
+    const reqTimeClassNormalized = timeClass !== DEFAULT_TIME_CLASS ? normalizeTimeClass(timeClass) : DEFAULT_TIME_CLASS
+
+    if (reqRulesNormalized !== DEFAULT_RULES) {
+      allGames = allGames.filter((game: GameType) => normalizeRules(game.rules) === reqRulesNormalized)
     }
 
-    if (timeClass !== DEFAULT_TIME_CLASS) {
-      allGames = allGames.filter((game: GameType) => game.time_class === timeClass)
+    if (reqTimeClassNormalized !== DEFAULT_TIME_CLASS) {
+      allGames = allGames.filter(
+        (game: GameType) => normalizeTimeClass(game.time_class) === reqTimeClassNormalized
+      )
     }
 
-    // Перевіряємо, чи залишилися ігри після попередньої фільтрації
     if (allGames.length === 0) {
       return {
         win: 0,
@@ -267,14 +446,13 @@ export const useGamesStore = defineStore('games', () => {
         duration: 0,
         graphData: [],
         effectiveTimeClass: timeClass,
-        effectiveRules: rules
+        effectiveRules: rules,
+        effectivePlatform
       }
     }
 
-    // Відсортуємо за часом завершення зростаюче для стабільного порядку
     const allGamesSorted = [...allGames].sort((a, b) => a.end_time - b.end_time)
 
-    // Обчислюємо ефективні параметри з урахуванням відсортованого списку
     let effectiveTimeClass = timeClass
     if (effectiveTimeClass === DEFAULT_TIME_CLASS) {
       const lastGame = allGamesSorted[allGamesSorted.length - 1]
@@ -287,10 +465,12 @@ export const useGamesStore = defineStore('games', () => {
       effectiveRules = lastGame?.rules || DEFAULT_RULES
     }
 
-    // Фільтруємо під ефективні параметри і залишаємо відсортований порядок
+    const effRulesNormalized = normalizeRules(effectiveRules)
+    const effTimeClassNormalized = normalizeTimeClass(effectiveTimeClass)
+
     const filteredGames: GameType[] = allGamesSorted
-      .filter((game: GameType) => game.time_class === effectiveTimeClass)
-      .filter((game: GameType) => game.rules === effectiveRules)
+      .filter((game: GameType) => normalizeTimeClass(game.time_class) === effTimeClassNormalized)
+      .filter((game: GameType) => normalizeRules(game.rules) === effRulesNormalized)
 
     const initialAcc: GamesDataType = {
       win: 0,
@@ -299,7 +479,8 @@ export const useGamesStore = defineStore('games', () => {
       duration: 0,
       graphData: [],
       effectiveTimeClass,
-      effectiveRules
+      effectiveRules,
+      effectivePlatform
     }
 
     const gamesData = filteredGames.reduce((acc, game) => {
@@ -319,15 +500,19 @@ export const useGamesStore = defineStore('games', () => {
           rating = game.black.rating
           win = game.black.result === GAME_RESULT_WIN ? 1 : 0
         } else {
-          return acc // гра не для цього ніку
+          return acc
         }
 
         if (game.white.result === game.black.result) {
           draw = 1
         }
 
-        const duration =
-          game.rules === RULE_BUGHOUSE ? +game.time_control : getDurationFromPgn(game.pgn)
+        let duration = 0
+        if (game.computedDuration !== undefined) {
+          duration = game.computedDuration
+        } else {
+          duration = game.rules === RULE_BUGHOUSE ? +game.time_control : getDurationFromPgn(game.pgn)
+        }
 
         per = { rating, win, draw, duration }
         analysisCache.value[cacheKey] = per
@@ -351,7 +536,6 @@ export const useGamesStore = defineStore('games', () => {
   }
 
   function clearAnalysisCacheForParams(nick: string) {
-    // Очищаємо кеш для конкретного ніку
     Object.keys(analysisCache.value).forEach((key) => {
       const [, cachedNick] = key.split(':')
       if (cachedNick === nick) {
@@ -362,11 +546,13 @@ export const useGamesStore = defineStore('games', () => {
 
   function clearGames() {
     games.value = []
+    activePlatform.value = DEFAULT_PLATFORM
     clearCache()
   }
 
   return {
     games,
+    activePlatform,
     getAllGames,
     updateGames,
     analyzeGames,

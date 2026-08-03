@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
     component: PConfig
   },
   {
-    path: '/games/:nick/:startTs?/:timeClass?/:rules?/:includeUnrated?',
+    path: '/games/:nick/:startTs?/:timeClass?/:rules?/:includeUnrated?/:platform?',
     name: 'games',
     component: PGames,
     props: (route) => ({
@@ -17,7 +17,8 @@ const routes: RouteRecordRaw[] = [
       nick: route.params.nick || null,
       timeClass: route.params.timeClass || null,
       rules: route.params.rules || null,
-      includeUnrated: route.params.includeUnrated ? route.params.includeUnrated === 'true' : null
+      includeUnrated: route.params.includeUnrated ? route.params.includeUnrated === 'true' : null,
+      platform: route.params.platform || null
     })
   },
   {
