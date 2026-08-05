@@ -9,10 +9,12 @@ import {
   DEFAULT_INCLUDE_UNRATED,
   DEFAULT_PLATFORM
 } from '@/stores/gamesStore'
+import { formatReadableStartDate, getLocalTimeZoneLabel, type TimeZoneMode } from '@/utils/startDate'
 
 const router = useRouter()
 
-const date = ref(new Date().toISOString())
+const date = ref(new Date())
+const timeZone = ref<TimeZoneMode>((localStorage.getItem('lastTimeZone') as TimeZoneMode) || 'local')
 const nick = ref(localStorage.getItem('lastNick') || '')
 const platform = ref(localStorage.getItem('lastPlatform') || DEFAULT_PLATFORM)
 const timeClass = ref(localStorage.getItem('lastTimeClass') || DEFAULT_TIME_CLASS)
@@ -23,18 +25,21 @@ const includeUnrated = ref(
     : DEFAULT_INCLUDE_UNRATED
 )
 
+const localTimeZoneLabel = computed(() => getLocalTimeZoneLabel(date.value))
+const readableStartDate = computed(() => formatReadableStartDate(date.value, timeZone.value))
+
 const computedUrl = computed(() => {
   if (!nick.value) {
     return ''
   }
 
-  const startTS = new Date(date.value).getTime()
+  const startDate = readableStartDate.value
 
   return router.resolve({
     name: 'games',
     params: {
       nick: nick.value,
-      startTs: startTS.toString(),
+      startTs: startDate,
       timeClass: timeClass.value,
       rules: rules.value,
       includeUnrated: includeUnrated.value.toString(),
@@ -43,6 +48,7 @@ const computedUrl = computed(() => {
   }).href
 })
 
+const timestampUrl = computed(() => router.resolve({ name: 'games', params: { nick: nick.value, startTs: date.value.getTime().toString(), timeClass: timeClass.value, rules: rules.value, includeUnrated: includeUnrated.value.toString(), platform: platform.value } }).href)
 const goToComputedUrl = () => {
   if (!nick.value) {
     return
@@ -50,6 +56,7 @@ const goToComputedUrl = () => {
 
   localStorage.setItem('lastNick', nick.value)
   localStorage.setItem('lastPlatform', platform.value)
+  localStorage.setItem('lastTimeZone', timeZone.value)
   localStorage.setItem('lastTimeClass', timeClass.value)
   localStorage.setItem('lastRules', rules.value)
   localStorage.setItem('lastIncludeUnrated', includeUnrated.value.toString())
@@ -94,10 +101,28 @@ const goToComputedUrl = () => {
     <hr />
     <input type="checkbox" v-model="includeUnrated" /> include unrated <br />
     <hr />
-    <VueDatePicker v-model="date" time-picker-inline inline auto-apply utc />
+    <strong>Start time:</strong><br />
+    <label>
+      Time zone:
+      <select v-model="timeZone">
+        <option value="local">Browser local — {{ localTimeZoneLabel }}</option>
+        <option value="utc">UTC</option>
+      </select>
+    </label>
+    <br />
+    <VueDatePicker v-model="date" time-picker-inline inline auto-apply :utc="timeZone === 'utc'" />
     <hr />
 
-    url: <a v-if="nick" :href="computedUrl">{{ computedUrl }}</a>
+    <template v-if="nick">
+      <div>
+        Readable URL <small>(<code>YYYY-MM-DD_HH-mm{{ timeZone === 'utc' ? 'Z' : '' }}</code>{{ timeZone === 'local' ? ', browser local time' : ', UTC' }}):</small>
+        <a :href="computedUrl">{{ computedUrl }}</a>
+      </div>
+      <div>
+        Timestamp URL <small>(legacy, milliseconds since Unix epoch):</small>
+        <a :href="timestampUrl">{{ timestampUrl }}</a>
+      </div>
+    </template>
     <span class="red" v-else>nick is required</span>
   </div>
 </template>
