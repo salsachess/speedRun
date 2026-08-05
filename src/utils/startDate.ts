@@ -44,7 +44,8 @@ export function parseStartDate(value: string | null | undefined): Date | null {
 }
 
 export function getLocalTimeZoneLabel(date = new Date()): string {
-  const name = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time'
+  const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time'
+  const name = browserTimeZone === 'Europe/Kiev' ? 'Europe/Kyiv' : browserTimeZone
   const offsetMinutes = -date.getTimezoneOffset()
   const sign = offsetMinutes >= 0 ? '+' : '-'
   const absoluteOffset = Math.abs(offsetMinutes)
