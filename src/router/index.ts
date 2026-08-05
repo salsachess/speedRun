@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
-...
+
 import PConfig from '../pages/PConfig.vue'
 import PGames from '../pages/PGames.vue'
 

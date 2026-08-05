@@ -88,8 +88,7 @@ const updateGames = async () => {
         const areThereNewGames = await gamesStore.updateGames(
           currentNick.value,
           currentStartTs.value,
-          currentIncludeUnrated.value,
-          currentPlatform.value
+          currentIncludeUnrated.value
         )
         if ((areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
           const allGamesData = gamesStore.analyzeGames(

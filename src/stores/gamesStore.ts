@@ -11,15 +11,19 @@ export const DEFAULT_INCLUDE_UNRATED = true
 export const PLATFORM_CHESSCOM = 'chesscom'
 export const PLATFORM_LICHESS = 'lichess'
 
-// Rate‑limit handling for Lichess API (max 1 request per minute)
-let lastLichessRequestTime = 0;
-async function ensureLichessRateLimit() {
+// Sequential request throttle: ensure a small gap between API requests
+// to avoid hammering the server. Lichess rules:
+//   1) No parallel requests — send one at a time.
+//   2) If you get 429, stop for 60 seconds before retrying.
+const API_GAP_MS = 1500; // 1.5 seconds between any two API requests
+let lastApiRequestTime = 0;
+async function ensureApiGap() {
   const now = Date.now();
-  const elapsed = now - lastLichessRequestTime;
-  if (elapsed < 60000) {
-    await new Promise((resolve) => setTimeout(resolve, 60000 - elapsed));
+  const elapsed = now - lastApiRequestTime;
+  if (elapsed < API_GAP_MS) {
+    await new Promise((resolve) => setTimeout(resolve, API_GAP_MS - elapsed));
   }
-  lastLichessRequestTime = Date.now();
+  lastApiRequestTime = Date.now();
 }
 
 export const RULE_BUGHOUSE = 'bughouse'
@@ -146,6 +150,7 @@ export const useGamesStore = defineStore('games', () => {
 
   async function fetchChessComGames(nick: string, year: number, month: number): Promise<GameType[]> {
     try {
+      await ensureApiGap();
       const response = await axios.get(
         `https://api.chess.com/pub/player/${nick}/games/${year}/${month < 10 ? '0' + month : month}`,
         {
@@ -167,7 +172,31 @@ export const useGamesStore = defineStore('games', () => {
           rules: normalizeRules(game.rules || 'chess'),
           time_class: normalizeTimeClass(game.time_class || 'blitz')
         }))
-    } catch (error) {
+    } catch (error: any) {
+      // Handle 429 rate limit for Chess.com
+      if (error && error.response && error.response.status === 429) {
+        console.warn('Chess.com API rate limit (429), waiting 60s before retry');
+        await new Promise((resolve) => setTimeout(resolve, 60000));
+        try {
+          await ensureApiGap();
+          const retryResp = await axios.get(
+            `https://api.chess.com/pub/player/${nick}/games/${year}/${month < 10 ? '0' + month : month}`,
+            { timeout: 10000 }
+          );
+          const rawGames = retryResp?.data?.games ?? [];
+          if (!Array.isArray(rawGames)) return [];
+          return rawGames
+            .filter((game: any) => game && typeof game === 'object' && game.url)
+            .map((game: any) => ({
+              ...game,
+              platform: PLATFORM_CHESSCOM,
+              rules: normalizeRules(game.rules || 'chess'),
+              time_class: normalizeTimeClass(game.time_class || 'blitz')
+            }));
+        } catch (retryErr) {
+          console.error('Chess.com retry after 429 also failed:', retryErr);
+        }
+      }
       console.error(`Failed to fetch Chess.com games for ${nick} (${year}-${month}):`, error)
       return []
     }
@@ -181,7 +210,7 @@ export const useGamesStore = defineStore('games', () => {
         pgnInJson: true,
         ...(includeUnrated ? {} : { rated: 'true' })
       })
-      await ensureLichessRateLimit();
+      await ensureApiGap();
       // Lichess public export API does not require authentication.
       const response = await axios.get(url, {
         headers: {
@@ -196,9 +225,9 @@ export const useGamesStore = defineStore('games', () => {
       const games = parseLichessNdjson(response.data)
       return games
     } catch (error: any) {
-      // If rate limited, wait and retry once
+      // If rate limited (429), wait 60 seconds (Lichess golden rule) and retry once
       if (error && error.response && error.response.status === 429) {
-        console.warn('Lichess API rate limit reached, waiting 60 seconds before retry');
+        console.warn('Lichess API rate limit (429), waiting 60s before retry');
         await new Promise((resolve) => setTimeout(resolve, 60000));
         try {
           const url = buildLichessUrl(nick, {
@@ -207,6 +236,7 @@ export const useGamesStore = defineStore('games', () => {
             pgnInJson: true,
             ...(includeUnrated ? {} : { rated: 'true' })
           })
+          await ensureApiGap();
           const retryResp = await axios.get(url, {
             headers: {
               Accept: 'application/x-ndjson'
@@ -218,7 +248,7 @@ export const useGamesStore = defineStore('games', () => {
             return parseLichessNdjson(retryResp.data);
           }
         } catch (retryErr) {
-          console.error('Retry after rate limit also failed:', retryErr);
+          console.error('Retry after 429 also failed:', retryErr);
         }
       }
       console.error(`Failed to fetch Lichess games for ${nick}:`, error);
@@ -229,6 +259,7 @@ export const useGamesStore = defineStore('games', () => {
           pgnInJson: true,
           ...(includeUnrated ? {} : { rated: 'true' })
         });
+        await ensureApiGap();
         const fallbackResp = await axios.get(fallbackUrl, {
           headers: { Accept: 'application/x-ndjson' },
           responseType: 'text',
@@ -269,14 +300,11 @@ export const useGamesStore = defineStore('games', () => {
 
     // Fetch latest Lichess game
     try {
-      try {
-        const recentGames = await fetchLichessGames(nick, new Date(0), true, 1)
-        if (recentGames.length > 0) {
-          const first = recentGames[0]
-          lichessLatestTime = first.end_time || 0
-        }
-      } catch (e) {
-        console.error('Failed to fetch recent Lichess game for detection:', e)
+      const recentStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // 30 days ago
+      const recentGames = await fetchLichessGames(nick, recentStart, true, 1)
+      if (recentGames.length > 0) {
+        const first = recentGames[0]
+        lichessLatestTime = first.end_time || 0
       }
     } catch (e) {
       console.error('Failed to fetch recent Lichess game for detection:', e)
@@ -351,18 +379,13 @@ export const useGamesStore = defineStore('games', () => {
     )
   }
 
-  async function updateGames(
-    nick: string,
-    startDate: Date,
-    includeUnrated: boolean,
-    platform: string = DEFAULT_PLATFORM
-  ) {
-    let resolvedPlatform = platform
-    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
-      // Re-detect the latest platform each time we update games to handle switches between Lichess and Chess.com on the fly
-      resolvedPlatform = await detectLatestPlatform(nick)
-      activePlatform.value = resolvedPlatform
-    }
+    async function updateGames(
+      nick: string,
+      startDate: Date,
+      includeUnrated: boolean
+    ) {
+    const resolvedPlatform = await detectLatestPlatform(nick)
+    activePlatform.value = resolvedPlatform
 
     let newGames: GameType[] = []
     if (resolvedPlatform === PLATFORM_LICHESS) {
