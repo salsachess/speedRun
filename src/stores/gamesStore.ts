@@ -137,6 +137,9 @@ export interface GamesDataType {
 export const useGamesStore = defineStore('games', () => {
   const games = ref<GameType[]>([])
   const activePlatform = ref<string>(DEFAULT_PLATFORM)
+  // Every full load starts a new data session. In-flight requests from a
+  // previous page must not be allowed to write into the new session.
+  let gamesGeneration = 0
 
   interface PerGameAnalysisType {
     rating: number
@@ -337,10 +340,14 @@ export const useGamesStore = defineStore('games', () => {
   ) {
     console.debug(`Starting getAllGames for ${nick} from ${startDate.toDateString()}, platform=${platform}`)
     clearGames()
+    const requestGeneration = gamesGeneration
 
     let resolvedPlatform = platform
     if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
       resolvedPlatform = await detectLatestPlatform(nick)
+    }
+    if (requestGeneration !== gamesGeneration) {
+      return
     }
     activePlatform.value = resolvedPlatform
 
@@ -368,6 +375,10 @@ export const useGamesStore = defineStore('games', () => {
       }
     }
 
+    if (requestGeneration !== gamesGeneration) {
+      return
+    }
+
     allGames.forEach((game) => {
       updateCache.value[game.url] = JSON.stringify(game)
     })
@@ -382,9 +393,24 @@ export const useGamesStore = defineStore('games', () => {
     async function updateGames(
       nick: string,
       startDate: Date,
-      includeUnrated: boolean
+      includeUnrated: boolean,
+      platform: string = DEFAULT_PLATFORM
     ) {
-    const resolvedPlatform = await detectLatestPlatform(nick)
+    const requestGeneration = gamesGeneration
+    let resolvedPlatform = platform
+
+    // Keep the platform selected for the current page. For `auto`, the
+    // platform was already resolved by getAllGames; detect it only when an
+    // update is called before the initial load has established one.
+    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
+      resolvedPlatform = activePlatform.value
+    }
+    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
+      resolvedPlatform = await detectLatestPlatform(nick)
+    }
+    if (requestGeneration !== gamesGeneration) {
+      return false
+    }
     activePlatform.value = resolvedPlatform
 
     let newGames: GameType[] = []
@@ -397,11 +423,16 @@ export const useGamesStore = defineStore('games', () => {
       newGames = await fetchChessComGames(nick, currentYear, currentMonth)
     }
 
+    if (requestGeneration !== gamesGeneration) {
+      return false
+    }
+
     if (!newGames.length) {
       return false
     }
 
     newGames = filterRatedGamesAndByStartDate(newGames, startDate, includeUnrated)
+      .filter((game) => game.platform === resolvedPlatform)
     let areThereNewGames = false
 
     newGames.forEach((game: GameType) => {
@@ -429,9 +460,8 @@ export const useGamesStore = defineStore('games', () => {
   }
 
   function analyzeGames(nick: string, timeClass: string, rules: string) {
-    let allGames = games.value
-
     const effectivePlatform = activePlatform.value || PLATFORM_CHESSCOM
+    let allGames = games.value.filter((game) => game.platform === effectivePlatform)
 
     if (allGames.length === 0) {
       console.debug(`No games found for analysis: ${nick}, ${timeClass}, ${rules}`)
@@ -567,6 +597,7 @@ export const useGamesStore = defineStore('games', () => {
   }
 
   function clearGames() {
+    gamesGeneration += 1
     games.value = []
     activePlatform.value = DEFAULT_PLATFORM
     clearCache()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   DEFAULT_RULES,
@@ -73,14 +73,24 @@ const initPage = async () => {
 
   await nextTick()
 
+  if (updatesStopped) {
+    return
+  }
+
   updateGames()
 }
 
 let updateInProgress = false
 let firstUpdate = true
+let updatesStopped = false
+let updateTimer: ReturnType<typeof setTimeout> | null = null
 let resizeUnsubscribe: (() => void) | null = null
 const updateGames = async () => {
   const updateAndScheduleNext = async () => {
+    if (updatesStopped) {
+      return
+    }
+
     if (!updateInProgress) {
       updateInProgress = true
 
@@ -88,9 +98,10 @@ const updateGames = async () => {
         const areThereNewGames = await gamesStore.updateGames(
           currentNick.value,
           currentStartTs.value,
-          currentIncludeUnrated.value
+          currentIncludeUnrated.value,
+          currentPlatform.value
         )
-        if ((areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
+        if (!updatesStopped && (areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
           const allGamesData = gamesStore.analyzeGames(
             currentNick.value,
             currentTimeClass.value,
@@ -108,11 +119,28 @@ const updateGames = async () => {
       }
     }
 
-    setTimeout(updateAndScheduleNext, UPDATE_GAMES_INTERVAL)
+    if (!updatesStopped) {
+      updateTimer = setTimeout(updateAndScheduleNext, UPDATE_GAMES_INTERVAL)
+    }
   }
 
-  updateAndScheduleNext()
+  updatesStopped = false
+  void updateAndScheduleNext()
 }
+
+const stopUpdates = () => {
+  updatesStopped = true
+  if (updateTimer !== null) {
+    clearTimeout(updateTimer)
+    updateTimer = null
+  }
+  if (resizeUnsubscribe) {
+    resizeUnsubscribe()
+    resizeUnsubscribe = null
+  }
+}
+
+onUnmounted(stopUpdates)
 
 const getTimeString = (secondsTotal: number) => {
   const hours = Math.floor(secondsTotal / 3600)
