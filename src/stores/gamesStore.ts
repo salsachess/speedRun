@@ -399,14 +399,25 @@ export const useGamesStore = defineStore('games', () => {
     const requestGeneration = gamesGeneration
     let resolvedPlatform = platform
 
-    // Keep the platform selected for the current page. For `auto`, the
-    // platform was already resolved by getAllGames; detect it only when an
-    // update is called before the initial load has established one.
     if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
-      resolvedPlatform = activePlatform.value
-    }
-    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
+      // `auto` must be re-evaluated during polling so a switch from one
+      // platform to another replaces the current data set.
       resolvedPlatform = await detectLatestPlatform(nick)
+      if (requestGeneration !== gamesGeneration) {
+        return false
+      }
+
+      if (
+        activePlatform.value !== DEFAULT_PLATFORM &&
+        activePlatform.value !== resolvedPlatform
+      ) {
+        await getAllGames(nick, startDate, includeUnrated, resolvedPlatform)
+        return activePlatform.value === resolvedPlatform && games.value.length > 0
+      }
+    }
+
+    if (!resolvedPlatform || resolvedPlatform === DEFAULT_PLATFORM) {
+      return false
     }
     if (requestGeneration !== gamesGeneration) {
       return false
