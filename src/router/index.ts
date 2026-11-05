@@ -18,7 +18,9 @@ const routes: RouteRecordRaw[] = [
       timeClass: route.params.timeClass || null,
       rules: route.params.rules || null,
       includeUnrated: route.params.includeUnrated ? route.params.includeUnrated === 'true' : null,
-      platform: route.params.platform || null
+      platform: route.params.platform || null,
+      movePattern: route.query.movePattern || null,
+      colorFilter: route.query.colorFilter || null
     })
   },
   {
