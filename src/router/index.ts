@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import PConfig from '../pages/PConfig.vue'
 import PGames from '../pages/PGames.vue'
+import { parseStartDate } from '../utils/startDate'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -13,7 +14,7 @@ const routes: RouteRecordRaw[] = [
     name: 'games',
     component: PGames,
     props: (route) => ({
-      startTs: route.params.startTs ? parseInt(route.params.startTs as string) : null,
+      startTs: route.params.startTs ? parseStartDate(route.params.startTs as string)?.getTime() ?? null : null,
       nick: route.params.nick || null,
       timeClass: route.params.timeClass || null,
       rules: route.params.rules || null,
