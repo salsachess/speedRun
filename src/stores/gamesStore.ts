@@ -305,7 +305,9 @@ export const useGamesStore = defineStore('games', () => {
     nick: string,
     startDate: Date,
     includeUnrated: boolean,
-    platform: string = DEFAULT_PLATFORM
+    platform: string = DEFAULT_PLATFORM,
+    movePattern?: string,
+    colorFilter?: string
   ) {
     console.debug(`Starting getAllGames for ${nick} from ${startDate.toDateString()}, platform=${platform}`)
     clearGames()

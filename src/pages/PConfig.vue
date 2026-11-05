@@ -7,11 +7,12 @@ import {
   DEFAULT_RULES,
   DEFAULT_TIME_CLASS,
   DEFAULT_INCLUDE_UNRATED,
-  DEFAULT_PLATFORM
+  DEFAULT_PLATFORM,
 } from '@/stores/gamesStore'
 
 const router = useRouter()
 
+// Basic refs
 const date = ref(new Date().toISOString())
 const nick = ref(localStorage.getItem('lastNick') || '')
 const platform = ref(localStorage.getItem('lastPlatform') || DEFAULT_PLATFORM)
@@ -23,37 +24,43 @@ const includeUnrated = ref(
     : DEFAULT_INCLUDE_UNRATED
 )
 
+// Advanced refs
+const showAdvanced = ref(false)
+const movePattern = ref(localStorage.getItem('lastMovePattern') || '')
+const colorFilter = ref(localStorage.getItem('lastColorFilter') || 'both')
+
 const computedUrl = computed(() => {
-  if (!nick.value) {
-    return ''
-  }
-
+  if (!nick.value) return ''
   const startTS = new Date(date.value).getTime()
-
-  return router.resolve({
-    name: 'games',
-    params: {
-      nick: nick.value,
-      startTs: startTS.toString(),
-      timeClass: timeClass.value,
-      rules: rules.value,
-      includeUnrated: includeUnrated.value.toString(),
-      platform: platform.value
-    }
-  }).href
+  const params: Record<string, any> = {
+    nick: nick.value,
+    startTs: startTS.toString(),
+    timeClass: timeClass.value,
+    rules: rules.value,
+    includeUnrated: includeUnrated.value.toString(),
+    platform: platform.value,
+  }
+  const query: Record<string, any> = {}
+  if (showAdvanced.value) {
+    if (movePattern.value) query.movePattern = movePattern.value
+    if (colorFilter.value && colorFilter.value !== 'both') query.colorFilter = colorFilter.value
+  }
+  return router.resolve({ name: 'games', params, query }).href
 })
 
 const goToComputedUrl = () => {
-  if (!nick.value) {
-    return
-  }
-
+  if (!nick.value) return
+  // basic values
   localStorage.setItem('lastNick', nick.value)
   localStorage.setItem('lastPlatform', platform.value)
   localStorage.setItem('lastTimeClass', timeClass.value)
   localStorage.setItem('lastRules', rules.value)
   localStorage.setItem('lastIncludeUnrated', includeUnrated.value.toString())
-
+  // advanced values
+  if (showAdvanced.value) {
+    localStorage.setItem('lastMovePattern', movePattern.value)
+    localStorage.setItem('lastColorFilter', colorFilter.value)
+  }
   router.push(computedUrl.value)
 }
 </script>
@@ -96,7 +103,18 @@ const goToComputedUrl = () => {
     <hr />
     <VueDatePicker v-model="date" time-picker-inline inline auto-apply utc />
     <hr />
-
+    <button type="button" @click="showAdvanced = !showAdvanced">
+      {{ showAdvanced ? 'Hide Advanced' : 'Advanced' }}
+    </button>
+    <div v-if="showAdvanced" style="margin-top: 8px;">
+      <input type="text" v-model="movePattern" placeholder="Move pattern (e.g. 1.e4)" />
+      <select v-model="colorFilter" style="margin-left: 8px;">
+        <option value="both">Both colors</option>
+        <option value="white">White</option>
+        <option value="black">Black</option>
+      </select>
+    </div>
+    <hr />
     url: <a v-if="nick" :href="computedUrl">{{ computedUrl }}</a>
     <span class="red" v-else>nick is required</span>
   </div>

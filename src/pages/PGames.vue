@@ -20,6 +20,8 @@ const props = defineProps<{
   rules: string | null
   includeUnrated: boolean | null
   platform: string | null
+  movePattern?: string | null
+  colorFilter?: string | null
 }>()
 
 const router = useRouter()
@@ -29,6 +31,8 @@ const currentTimeClass = ref(props.timeClass ?? DEFAULT_TIME_CLASS)
 const currentRules = ref(props.rules ?? DEFAULT_RULES)
 const currentIncludeUnrated = ref(props.includeUnrated ?? DEFAULT_INCLUDE_UNRATED)
 const currentPlatform = ref(props.platform ?? DEFAULT_PLATFORM)
+const currentMovePattern = ref(props.movePattern ?? '')
+const currentColorFilter = ref(props.colorFilter ?? 'both')
 const currentNick = ref(props.nick ?? '')
 const currentStartTs = ref(props.startTs ? new Date(props.startTs) : new Date())
 
@@ -54,7 +58,9 @@ const initPage = async () => {
       currentNick.value,
       currentStartTs.value,
       currentIncludeUnrated.value,
-      currentPlatform.value
+      currentPlatform.value,
+      currentMovePattern.value,
+      currentColorFilter.value
     )
 
     if (gamesStore.games.length === 0) {
