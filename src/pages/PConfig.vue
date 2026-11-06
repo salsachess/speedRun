@@ -45,34 +45,37 @@ const includeUnrated = ref(
 const localTimeZoneLabel = computed(() => getLocalTimeZoneLabel(date.value))
 const readableStartDate = computed(() => formatReadableStartDate(date.value, timeZone.value))
 
+const routeParams = (startTs: string) => ({
+  nick: nick.value,
+  startTs,
+  timeClass: timeClass.value,
+  rules: rules.value,
+  includeUnrated: includeUnrated.value.toString(),
+  platform: platform.value
+})
+
+const routeQuery = computed(() => ({
+  ...(movePattern.value ? { movePattern: movePattern.value } : {}),
+  ...(colorFilter.value !== 'both' ? { colorFilter: colorFilter.value } : {})
+}))
+
 const computedUrl = computed(() => {
   if (!nick.value) {
     return ''
   }
 
-  const startDate = readableStartDate.value
-
-  const query = {
-    nick: nick.value,
-    startTs: startDate,
-    timeClass: timeClass.value,
-    rules: rules.value,
-    includeUnrated: includeUnrated.value.toString(),
-    platform: platform.value,
-    movePattern: movePattern.value,
-    colorFilter: colorFilter.value
-  }
-
-  // Build query string manually to include only non-empty values
-  const queryString = Object.entries(query)
-    .filter(([, v]) => v !== '' && v !== null && v !== undefined)
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-    .join('&')
-
-  return router.resolve({ name: 'games', params: {} }).href + '?' + queryString
+  return router.resolve({
+    name: 'games',
+    params: routeParams(readableStartDate.value),
+    query: routeQuery.value
+  }).href
 })
 
-const timestampUrl = computed(() => router.resolve({ name: 'games', params: { nick: nick.value, startTs: date.value.getTime().toString(), timeClass: timeClass.value, rules: rules.value, includeUnrated: includeUnrated.value.toString(), platform: platform.value } }).href)
+const timestampUrl = computed(() => router.resolve({
+  name: 'games',
+  params: routeParams(date.value.getTime().toString()),
+  query: routeQuery.value
+}).href)
 const goToComputedUrl = () => {
   if (!nick.value) {
     return
