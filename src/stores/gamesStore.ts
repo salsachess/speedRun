@@ -391,7 +391,16 @@ export const useGamesStore = defineStore('games', () => {
 
     // Apply move pattern filter if provided
     if (movePattern) {
-      filtered = filtered.filter((game) => typeof (game as any).pgn === 'string' && (game as any).pgn.startsWith(movePattern))
+      const wanted = movePattern.replace(/\s+/g, '').toLowerCase()
+      filtered = filtered.filter((game) => {
+        const moves = game.pgn
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('['))
+          .join(' ')
+          .replace(/\s+/g, '')
+          .toLowerCase()
+        return moves.startsWith(wanted)
+      })
     }
 
     // Apply color filter if provided and not 'both'
@@ -400,10 +409,10 @@ export const useGamesStore = defineStore('games', () => {
         const whiteUser = (game as any).white?.username
         const blackUser = (game as any).black?.username
         if (colorFilter === 'white') {
-          return whiteUser === nick
+          return typeof whiteUser === 'string' && whiteUser.toLowerCase() === nick.toLowerCase()
         }
         if (colorFilter === 'black') {
-          return blackUser === nick
+          return typeof blackUser === 'string' && blackUser.toLowerCase() === nick.toLowerCase()
         }
         return true
       })
@@ -496,7 +505,13 @@ export const useGamesStore = defineStore('games', () => {
     return areThereNewGames
   }
 
-  function analyzeGames(nick: string, timeClass: string, rules: string) {
+  function analyzeGames(
+    nick: string,
+    timeClass: string,
+    rules: string,
+    movePattern = '',
+    colorFilter: 'both' | 'white' | 'black' = 'both'
+  ) {
     const effectivePlatform = activePlatform.value || PLATFORM_CHESSCOM
     let allGames = games.value.filter((game) => game.platform === effectivePlatform)
 
@@ -525,6 +540,27 @@ export const useGamesStore = defineStore('games', () => {
       allGames = allGames.filter(
         (game: GameType) => normalizeTimeClass(game.time_class) === reqTimeClassNormalized
       )
+    }
+
+    if (movePattern) {
+      const wanted = movePattern.replace(/\s+/g, '').toLowerCase()
+      allGames = allGames.filter((game) => {
+        const moves = game.pgn
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('['))
+          .join(' ')
+          .replace(/\s+/g, '')
+          .toLowerCase()
+        return moves.startsWith(wanted)
+      })
+    }
+
+    if (colorFilter !== 'both') {
+      const wantedNick = nick.toLowerCase()
+      allGames = allGames.filter((game) => {
+        const player = colorFilter === 'white' ? game.white.username : game.black.username
+        return player.toLowerCase() === wantedNick
+      })
     }
 
     if (allGames.length === 0) {

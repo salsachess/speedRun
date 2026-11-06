@@ -58,7 +58,9 @@ const initPage = async () => {
       currentNick.value,
       currentStartTs.value,
       currentIncludeUnrated.value,
-      currentPlatform.value
+      currentPlatform.value,
+      currentMovePattern.value,
+      currentColorFilter.value as 'both' | 'white' | 'black'
     )
 
     if (gamesStore.games.length === 0) {
@@ -109,7 +111,9 @@ const updateGames = async () => {
           const allGamesData = gamesStore.analyzeGames(
             currentNick.value,
             currentTimeClass.value,
-            currentRules.value
+            currentRules.value,
+            currentMovePattern.value,
+            currentColorFilter.value as 'both' | 'white' | 'black'
           )
 
           prepareGamesDataForVisualization(allGamesData)
