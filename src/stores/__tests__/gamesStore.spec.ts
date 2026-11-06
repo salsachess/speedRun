@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import axios from 'axios'
 import { setActivePinia, createPinia } from 'pinia'
 import {
   useGamesStore,
@@ -104,4 +105,79 @@ describe('gamesStore', () => {
       { x: 120, y: 1510 }
     ])
   })
+  it("updates only the selected platform during polling", async () => {
+    const store = useGamesStore()
+    store.activePlatform = PLATFORM_LICHESS
+
+    const getSpy = vi.spyOn(axios, "get").mockResolvedValue({
+      data: JSON.stringify({
+        id: "new-game",
+        createdAt: 1000000,
+        lastMoveAt: 1000120,
+        rated: true,
+        speed: "blitz",
+        variant: "standard",
+        players: {
+          white: { user: { name: "testplayer" }, rating: 1500 },
+          black: { user: { name: "opponent" }, rating: 1400 }
+        },
+        winner: "white"
+      })
+    } as any)
+
+    await store.updateGames("testplayer", new Date(0), true, PLATFORM_LICHESS)
+
+    expect(getSpy).toHaveBeenCalledTimes(1)
+    expect(getSpy.mock.calls[0]?.[0]).toContain("lichess.org")
+    expect(store.games).toHaveLength(1)
+    expect(store.games[0]?.platform).toBe(PLATFORM_LICHESS)
+    getSpy.mockRestore()
+  })
+  it("switches to a newer platform in auto mode", async () => {
+    const store = useGamesStore()
+    store.activePlatform = PLATFORM_LICHESS
+
+    const now = Date.now()
+    const startDate = new Date(now - 60_000)
+    const chessComGame = {
+      url: "https://chess.com/game/live/960-game",
+      pgn: "",
+      time_control: "180",
+      end_time: Math.floor(now / 1000) + 60,
+      rated: true,
+      time_class: "blitz",
+      rules: "chess960",
+      white: { username: "testplayer", rating: 1500, result: "win" },
+      black: { username: "opponent", rating: 1400, result: "loss" }
+    }
+    const oldLichessGame = {
+      id: "old-lichess",
+      createdAt: now - 120_000,
+      lastMoveAt: now - 60_000,
+      rated: true,
+      speed: "blitz",
+      variant: "standard",
+      players: {
+        white: { user: { name: "testplayer" }, rating: 1500 },
+        black: { user: { name: "opponent" }, rating: 1400 }
+      },
+      winner: "white"
+    }
+
+    const getSpy = vi
+      .spyOn(axios, "get")
+      .mockResolvedValueOnce({ data: { games: [chessComGame] } } as any)
+      .mockResolvedValueOnce({ data: JSON.stringify(oldLichessGame) } as any)
+      .mockResolvedValueOnce({ data: { games: [chessComGame] } } as any)
+
+    await store.updateGames("testplayer", startDate, true, DEFAULT_PLATFORM)
+
+    expect(getSpy).toHaveBeenCalledTimes(3)
+    expect(store.activePlatform).toBe(PLATFORM_CHESSCOM)
+    expect(store.games).toHaveLength(1)
+    expect(store.games[0]?.platform).toBe(PLATFORM_CHESSCOM)
+    expect(store.games[0]?.rules).toBe("chess960")
+    getSpy.mockRestore()
+  })
 })
+

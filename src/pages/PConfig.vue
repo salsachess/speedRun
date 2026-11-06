@@ -7,13 +7,27 @@ import {
   DEFAULT_RULES,
   DEFAULT_TIME_CLASS,
   DEFAULT_INCLUDE_UNRATED,
-  DEFAULT_PLATFORM,
+  DEFAULT_PLATFORM
 } from '@/stores/gamesStore'
+import { formatReadableStartDate, getLocalTimeZoneLabel, type TimeZoneMode } from '@/utils/startDate'
 
 const router = useRouter()
 
-// Basic refs
-const date = ref(new Date().toISOString())
+// Advanced filter state
+const showAdvanced = ref(false)
+
+// filters
+const movePattern = ref(localStorage.getItem('movePattern') || '')
+const colorFilter = ref<'both'|'white'|'black'>((localStorage.getItem('colorFilter') as any) || 'both')
+
+// Persist advanced filter values
+const persistAdvanced = () => {
+  localStorage.setItem('movePattern', movePattern.value)
+  localStorage.setItem('colorFilter', colorFilter.value)
+}
+
+const date = ref(new Date())
+const timeZone = ref<TimeZoneMode>((localStorage.getItem('lastTimeZone') as TimeZoneMode) || 'local')
 const nick = ref(localStorage.getItem('lastNick') || '')
 const platform = ref(localStorage.getItem('lastPlatform') || DEFAULT_PLATFORM)
 const timeClass = ref(localStorage.getItem('lastTimeClass') || DEFAULT_TIME_CLASS)
@@ -24,43 +38,56 @@ const includeUnrated = ref(
     : DEFAULT_INCLUDE_UNRATED
 )
 
-// Advanced refs
-const showAdvanced = ref(false)
-const movePattern = ref(localStorage.getItem('lastMovePattern') || '')
-const colorFilter = ref(localStorage.getItem('lastColorFilter') || 'both')
+
+
+
+
+const localTimeZoneLabel = computed(() => getLocalTimeZoneLabel(date.value))
+const readableStartDate = computed(() => formatReadableStartDate(date.value, timeZone.value))
 
 const computedUrl = computed(() => {
-  if (!nick.value) return ''
-  const startTS = new Date(date.value).getTime()
-  const params: Record<string, any> = {
+  if (!nick.value) {
+    return ''
+  }
+
+  const startDate = readableStartDate.value
+
+  const query = {
     nick: nick.value,
-    startTs: startTS.toString(),
+    startTs: startDate,
     timeClass: timeClass.value,
     rules: rules.value,
     includeUnrated: includeUnrated.value.toString(),
     platform: platform.value,
+    movePattern: movePattern.value,
+    colorFilter: colorFilter.value
   }
-  const query: Record<string, any> = {}
-  if (showAdvanced.value) {
-    if (movePattern.value) query.movePattern = movePattern.value
-    if (colorFilter.value && colorFilter.value !== 'both') query.colorFilter = colorFilter.value
-  }
-  return router.resolve({ name: 'games', params, query }).href
+
+  // Build query string manually to include only non-empty values
+  const queryString = Object.entries(query)
+    .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+
+  return router.resolve({ name: 'games', params: {} }).href + '?' + queryString
 })
 
+const timestampUrl = computed(() => router.resolve({ name: 'games', params: { nick: nick.value, startTs: date.value.getTime().toString(), timeClass: timeClass.value, rules: rules.value, includeUnrated: includeUnrated.value.toString(), platform: platform.value } }).href)
 const goToComputedUrl = () => {
-  if (!nick.value) return
-  // basic values
+  if (!nick.value) {
+    return
+  }
+
+  // Persist advanced filters before navigating
+  persistAdvanced()
+
   localStorage.setItem('lastNick', nick.value)
   localStorage.setItem('lastPlatform', platform.value)
+  localStorage.setItem('lastTimeZone', timeZone.value)
   localStorage.setItem('lastTimeClass', timeClass.value)
   localStorage.setItem('lastRules', rules.value)
   localStorage.setItem('lastIncludeUnrated', includeUnrated.value.toString())
-  // advanced values
-  if (showAdvanced.value) {
-    localStorage.setItem('lastMovePattern', movePattern.value)
-    localStorage.setItem('lastColorFilter', colorFilter.value)
-  }
+
   router.push(computedUrl.value)
 }
 </script>
@@ -100,22 +127,44 @@ const goToComputedUrl = () => {
     <input type="radio" v-model="rules" value="oddschess" /> oddschess (chess.com only) <br />
     <hr />
     <input type="checkbox" v-model="includeUnrated" /> include unrated <br />
-    <hr />
-    <VueDatePicker v-model="date" time-picker-inline inline auto-apply utc />
-    <hr />
-    <button type="button" @click="showAdvanced = !showAdvanced">
-      {{ showAdvanced ? 'Hide Advanced' : 'Advanced' }}
+    <!-- Advanced toggle -->
+    <button @click="showAdvanced = !showAdvanced" style="margin-top:10px;">
+      {{ showAdvanced ? 'Hide' : 'Advanced' }}
     </button>
-    <div v-if="showAdvanced" style="margin-top: 8px;">
-      <input type="text" v-model="movePattern" placeholder="Move pattern (e.g. 1.e4)" />
-      <select v-model="colorFilter" style="margin-left: 8px;">
-        <option value="both">Both colors</option>
+    <div v-if="showAdvanced" style="margin-top:10px;">
+      <label>Move pattern (PGN): </label>
+      <input type="text" v-model="movePattern" placeholder="e.g., 1.e4" />
+      <br />
+      <label>Color filter: </label>
+      <select v-model="colorFilter">
+        <option value="both">Both</option>
         <option value="white">White</option>
         <option value="black">Black</option>
       </select>
-    </div>
+    </div> <br />
     <hr />
-    url: <a v-if="nick" :href="computedUrl">{{ computedUrl }}</a>
+    <strong>Start time:</strong><br />
+    <label>
+      Time zone:
+      <select v-model="timeZone">
+        <option value="local">Browser local — {{ localTimeZoneLabel }}</option>
+        <option value="utc">UTC</option>
+      </select>
+    </label>
+    <br />
+    <VueDatePicker v-model="date" time-picker-inline inline auto-apply :utc="timeZone === 'utc'" />
+    <hr />
+
+    <template v-if="nick">
+      <div>
+        Readable URL <small>(<code>YYYY-MM-DD_HH-mm{{ timeZone === 'utc' ? 'Z' : '' }}</code>{{ timeZone === 'local' ? ', browser local time' : ', UTC' }}):</small>
+        <a :href="computedUrl">{{ computedUrl }}</a>
+      </div>
+      <div>
+        Timestamp URL <small>(legacy, milliseconds since Unix epoch):</small>
+        <a :href="timestampUrl">{{ timestampUrl }}</a>
+      </div>
+    </template>
     <span class="red" v-else>nick is required</span>
   </div>
 </template>
@@ -129,3 +178,4 @@ const goToComputedUrl = () => {
   color: red;
 }
 </style>
+
