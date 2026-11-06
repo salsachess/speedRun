@@ -105,7 +105,9 @@ const updateGames = async () => {
           currentNick.value,
           currentStartTs.value,
           currentIncludeUnrated.value,
-          currentPlatform.value
+          currentPlatform.value,
+          currentMovePattern.value,
+          currentColorFilter.value as 'both' | 'white' | 'black'
         )
         if (!updatesStopped && (areThereNewGames || firstUpdate) && gamesStore.games.length > 0) {
           const allGamesData = gamesStore.analyzeGames(

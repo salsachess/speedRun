@@ -429,7 +429,9 @@ export const useGamesStore = defineStore('games', () => {
       nick: string,
       startDate: Date,
       includeUnrated: boolean,
-      platform: string = DEFAULT_PLATFORM
+      platform: string = DEFAULT_PLATFORM,
+      movePattern = '',
+      colorFilter: 'both' | 'white' | 'black' = 'both'
     ) {
     const requestGeneration = gamesGeneration
     let resolvedPlatform = platform
@@ -479,6 +481,27 @@ export const useGamesStore = defineStore('games', () => {
 
     newGames = filterRatedGamesAndByStartDate(newGames, startDate, includeUnrated)
       .filter((game) => game.platform === resolvedPlatform)
+
+    if (movePattern) {
+      const wanted = movePattern.replace(/\s+/g, '').toLowerCase()
+      newGames = newGames.filter((game) => {
+        const moves = game.pgn
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('['))
+          .join(' ')
+          .replace(/\s+/g, '')
+          .toLowerCase()
+        return moves.startsWith(wanted)
+      })
+    }
+
+    if (colorFilter !== 'both') {
+      const wantedNick = nick.toLowerCase()
+      newGames = newGames.filter((game) => {
+        const player = colorFilter === 'white' ? game.white.username : game.black.username
+        return player.toLowerCase() === wantedNick
+      })
+    }
     let areThereNewGames = false
 
     newGames.forEach((game: GameType) => {
